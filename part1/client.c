@@ -11,6 +11,17 @@
 
 #define MAX_LEN 512
 
+// send UPDATEPOSITION [SensorID] [SensorRange] [CurrentXPosition] [CurrentYPosition]
+void sendUpdatePosition(int sockfd, char* id, double range, double x, double y) {
+    char message[MAX_LEN];
+
+    snprintf(message, sizeof(message), "UPDATEPOSITION %s %f %f %f", id, range, x, y);
+    printf("sending %s\n", message);
+
+    send(sockfd, message, strlen(message), 0);
+    // free(message);
+}
+
 int main(int argc, char ** argv ) {
     if (argc < 7) {
         fprintf(stderr, "ERROR: Invalid argument(s)\nUSAGE: ./client.out [control address] [control port] [SensorID] [SensorRange] [InitalXPosition] [InitialYPosition]\n");
@@ -28,7 +39,6 @@ int main(int argc, char ** argv ) {
     int sockfd;
     struct sockaddr_in servaddr;
     char buffer[MAX_LEN];
-    char message[MAX_LEN] = "Hello, server!";
 
     // create socket
     if ((sockfd = socket(AF_INET, SOCK_STREAM, 0)) < 0) {
@@ -57,10 +67,12 @@ int main(int argc, char ** argv ) {
 
     printf("connected!\n");
 
-    while (true) {
-
-    }
+    sendUpdatePosition(sockfd, id, range, initX, initY);
     
+    // while (true) {
+
+    // }
+
     // send(sockfd, message, strlen(message), 0);
     // printf("Message sent to server: %s\n", message);
 

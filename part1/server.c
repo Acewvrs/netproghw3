@@ -157,11 +157,13 @@ int main(int argc, char ** argv ) {
         if (FD_ISSET(STDIN_FILENO, &readfds)) {
             // received user input
             Readline(STDIN_FILENO, buffer, MAX_LEN);
+
+            buffer[strlen(buffer) - 1] = '\0'; // replace the newline char with null terminator
+            if (strcmp(buffer, "QUIT") == 0) break;
             // printf("input: %s", buffer);
         }
         else if (FD_ISSET(sockfd, &readfds)) { 
              // client is attempting to connect
-
             if (num_connected < MAX_CONNECTIONS) {
                 // printf("connected!\n");
                 int newsockfd = accept(sockfd, (struct sockaddr *) &cliaddr, &cli_addr_size);
@@ -188,6 +190,9 @@ int main(int argc, char ** argv ) {
             }
         }
 
+        for (int i = 0; i < MAX_CONNECTIONS; i++) {
+            
+        }
         // for (int i = 0; i < 5; i++) {
         //     if (server_socks[i] > 0 && FD_ISSET(server_socks[i], &readfds)) {
         //         //  at least one server sent a message
