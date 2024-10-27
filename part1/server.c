@@ -9,6 +9,7 @@
 // #include "unp.h" 
 
 #define MAX_LEN 512
+#define MAX_CONNECTIONS 10
 
 struct BaseStation {
     char* id;
@@ -101,6 +102,176 @@ int main(int argc, char ** argv ) {
         base_idx++;
     }
 
+    int					sockfd;
+    struct sockaddr_in	servaddr, cliaddr;
+
+    sockfd = socket(AF_INET, SOCK_STREAM, 0);
+
+    // Set SO_REUSEADDR option
+    int optval = 1;
+    if (setsockopt(sockfd, SOL_SOCKET, SO_REUSEADDR, &optval, sizeof(optval)) < 0) {
+        perror("Error setting SO_REUSEADDR");
+        return 1;
+    }
+
+    bzero(&servaddr, sizeof(servaddr));
+    servaddr.sin_family      = AF_INET;
+    servaddr.sin_addr.s_addr = INADDR_ANY;
+    servaddr.sin_port        = htons(port);
+
+    if (bind(sockfd, (struct sockaddr*)&servaddr, sizeof(servaddr)) == -1) {
+        perror("select error");
+        exit(EXIT_FAILURE);
+    }
+
+    if (listen(sockfd, 3) == -1) {
+        perror("listen error");
+        exit(EXIT_FAILURE);
+    }
+
+    // saved sockets and names of each client
+    int* server_socks = calloc(MAX_CONNECTIONS, sizeof(int));
+    char** client_names = calloc(MAX_CONNECTIONS, sizeof(char*));
+
+    socklen_t cli_addr_size;
+
+    fd_set readfds, reads;
+
+    // Initialize the file descriptor set
+    FD_ZERO(&reads); // zero out
+    FD_SET(STDIN_FILENO, &reads); // detect user input for server
+    FD_SET(sockfd, &reads);
+
+    int num_connected = 0;
+    char* buffer = calloc(MAX_LEN, sizeof(char));
+
+    while (true) {
+        readfds = reads;
+        // Check if any of the connected servers have sent data
+        int num_ready = select(FD_SETSIZE, &readfds, NULL, NULL, NULL);
+        if (num_ready < 0) {
+            perror("select error");
+            exit(1);
+        }
+
+        if (FD_ISSET(STDIN_FILENO, &readfds)) {
+            // received user input
+            Readline(STDIN_FILENO, buffer, MAX_LEN);
+            // printf("input: %s", buffer);
+        }
+        else if (FD_ISSET(sockfd, &readfds)) { 
+             // client is attempting to connect
+
+            if (num_connected < MAX_CONNECTIONS) {
+                // printf("connected!\n");
+                int newsockfd = accept(sockfd, (struct sockaddr *) &cliaddr, &cli_addr_size);
+                // printf("Connected to port %d\n", port);
+                // sprintf(msg, "Welcome to Guess the Word, please enter your username.\n");
+                // send(newsockfd, msg, strlen(msg), 0);
+
+                // find the empty socket pos
+                for (int i = 0; i < MAX_CONNECTIONS; i++) {
+                    if (server_socks[i] == 0) {
+                        server_socks[i] = newsockfd;
+                        break;
+                    }
+                }
+
+                FD_SET(newsockfd, &reads);
+                FD_SET(STDIN_FILENO, &reads);
+                num_connected++;
+            }
+            else {
+                // Out of connections
+                int newsockfd = accept(sockfd, (struct sockaddr *) &cliaddr, &cli_addr_size);
+                close(newsockfd);
+            }
+        }
+
+        // for (int i = 0; i < 5; i++) {
+        //     if (server_socks[i] > 0 && FD_ISSET(server_socks[i], &readfds)) {
+        //         //  at least one server sent a message
+        //         int n = recv(server_socks[i], buffer, MAX_LEN - 1, 0);
+        //         if (n == 0) {
+        //             // Client closed connection
+        //             FD_CLR(server_socks[i], &reads);
+        //             close_socket(server_socks, usernames, i);
+        //             num_connected--;
+        //         } 
+        //         else if (n > 0) {
+        //             remove_newline(buffer);
+        //             buffer[stringSize(buffer)] = '\0';
+                        
+        //             if (usernames[i] == NULL) {
+        //                 // user is setting the username
+        //                 char* username = calloc(strlen(buffer), sizeof(char));
+        //                 strcpy(username, buffer);
+
+        //                 // check if the username is already in use
+        //                 bool duplicate = false;
+        //                 for (int j = 0; j < 5; j++) {
+        //                     if (usernames[j] == NULL) continue;
+                            
+        //                     // compare the usernames without modifying the original input
+        //                     char* username_in_use = calloc(strlen(usernames[j]), sizeof(char));
+        //                     strcpy(username_in_use, usernames[j]);
+        //                     if (strcmp(tolower_string(username_in_use), tolower_string(buffer)) == 0) {
+        //                         duplicate = true;
+        //                     }
+        //                     free(username_in_use);
+        //                 }
+                       
+        //                 if (!duplicate) {
+        //                     usernames[i] = username;
+        //                     sprintf(msg, "Let's start playing, %s\n", usernames[i]);
+        //                     send(server_socks[i], msg, strlen(msg), 0);    
+        //                     sprintf(msg, "There are %d player(s) playing. The secret word is %d letter(s).\n", num_connected, stringSize(hidden_word));
+        //                 }
+        //                 else {
+        //                     sprintf(msg, "Username %s is already taken, please enter a different username\n", username);
+        //                 }
+        //                 send(server_socks[i], msg, strlen(msg), 0);                      
+        //             }
+        //             else {
+        //                 // user is guessing the word
+        //                 int guess_len = stringSize(buffer);
+        //                 if (guess_len != stringSize(hidden_word)) {
+        //                     sprintf(msg, "Invalid guess length. The secret word is %d letter(s).\n", stringSize(hidden_word));
+        //                     send(server_socks[i], msg, strlen(msg), 0);
+        //                 }
+        //                 else {
+        //                     // send guess result to every other client
+        //                     int exact_match = strings_position_match(hidden_word, buffer);
+        //                     int letters_match = strings_letters_match(hidden_word, buffer);
+
+        //                     // check if the guess is correct
+        //                     if (letters_match == stringSize(hidden_word)) {
+        //                         sprintf(msg, "%s has correctly guessed the word %s", usernames[i], hidden_word);
+        //                         guess_correct = true;
+        //                     }
+        //                     else {
+        //                         sprintf(msg, "%s guessed %s: %d letter(s) were correct and %d letter(s) were correctly placed.\n", usernames[i], buffer, letters_match, exact_match);
+        //                     }
+
+        //                     for (int j = 0; j < 5; j++) {
+        //                         if (usernames[j] == NULL) continue;
+        //                         send(server_socks[j], msg, strlen(msg), 0);
+
+        //                         if (guess_correct) {
+        //                             // close the socket after a user guessed the secret word
+        //                             FD_CLR(server_socks[i], &reads);
+        //                             close_socket(server_socks, usernames, j);
+        //                             num_connected--;
+        //                         }
+        //                     }
+        //                 }
+        //             }
+        //         }
+        //     }
+        // }
+    }
+
+    // free dynamically allocated space
     for (int i = 0; i < num_bases; i++) {
         free(bases[i]->id);
         free(bases[i]->listOfLinks);
