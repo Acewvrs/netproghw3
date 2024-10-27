@@ -28,13 +28,7 @@ void printBase(struct BaseStation* base) {
     printf("\n");
 }
 
-void saveBase(struct BaseStation** bases, char* base_info) {
-    struct BaseStation* base;
-
-    // *(word + stringSize(word)) = '\0';
-
-    char** listOfLinks;
-
+void saveBase(struct BaseStation* base, char* base_info) {
     int word_idx = 0; // each word in a single line in base_file, separated by empty-char delimiter ' ' or '/n' (end of line)
     char* word = calloc(MAX_LEN, sizeof(char));
     int word_size = 0;
@@ -53,7 +47,7 @@ void saveBase(struct BaseStation** bases, char* base_info) {
             }
             else if (word_idx == 3) { // numLinks and initiate list of links
                 base->numLinks = atoi(word);
-                listOfLinks = calloc(atoi(word), sizeof(char*));
+                base->listOfLinks = calloc(atoi(word), sizeof(char*));
             }
             else { // add other bases to list of links
                 base->listOfLinks[word_idx - 4] = word;
@@ -68,8 +62,6 @@ void saveBase(struct BaseStation** bases, char* base_info) {
             word_size++;
         }
     }
-
-    printBase(base);
 }
 
 int main(int argc, char ** argv ) {
@@ -102,13 +94,16 @@ int main(int argc, char ** argv ) {
 
     int base_idx = 0;
     while (fgets(base_info, MAX_LEN, file)) {
-        saveBase(bases, base_info);
+        struct BaseStation* base = (struct BaseStation*)malloc(sizeof(struct BaseStation));
+        saveBase(base, base_info);
+        bases[base_idx] = base;
+        // printBase(base);
         base_idx++;
     }
 
     for (int i = 0; i < num_bases; i++) {
-        // free(bases[i]->id);
-        // free(bases[i]->listOfLinks);
+        free(bases[i]->id);
+        free(bases[i]->listOfLinks);
         free(bases[i]);
     }
 
