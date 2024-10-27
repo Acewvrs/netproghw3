@@ -10,9 +10,7 @@
 
 int main(int argc, char ** argv ) {
     if (argc < 7) {
-        fprintf(stderr, "ERROR: Invalid argument(s)\nUSAGE: ./client.out [control address] [control
-port] [SensorID] [SensorRange] [InitalXPosition] [InitialYPosition]
-\n");
+        fprintf(stderr, "ERROR: Invalid argument(s)\nUSAGE: ./client.out [control address] [control port] [SensorID] [SensorRange] [InitalXPosition] [InitialYPosition]\n");
         return EXIT_FAILURE;
     }
 
@@ -23,7 +21,7 @@ port] [SensorID] [SensorRange] [InitalXPosition] [InitialYPosition]
     double initX = atof(argv[5]);
     double initY = atof(argv[6]);
 
-    
+
 
     return EXIT_SUCCESS;
 }
