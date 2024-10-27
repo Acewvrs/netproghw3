@@ -19,6 +19,24 @@ struct BaseStation {
     char** listOfLinks; // a space-separated list of base station IDs that this base station is connected to (bidirectional)
 };
 
+struct Sensor {
+    char* id;
+    float range;
+    float x;
+    float y;
+};
+
+void getRequestType(const char *input, char *request_type) {
+    int i = 0;
+    
+    // Copy characters until we reach a space or the end of the input string
+    while (input[i] != ' ' && input[i] != '\0') {
+        request_type[i] = input[i];
+        i++;
+    }
+    request_type[i] = '\0'; // Null-terminate the first word
+}
+
 void printBase(struct BaseStation* base) {
     printf("Printing Base Info: \n ID: %s\n Pos: (%f, %f)\n Num Links: %d\n", base->id, base->x, base->y, base->numLinks);
 
@@ -30,15 +48,17 @@ void printBase(struct BaseStation* base) {
 }
 
 void saveBase(struct BaseStation* base, char* base_info) {
+    int str_size = strlen(base_info);
     int word_idx = 0; // each word in a single line in base_file, separated by empty-char delimiter ' ' or '/n' (end of line)
     char* word = calloc(MAX_LEN, sizeof(char));
     int word_size = 0;
-    for (int i = 0; i < strlen(base_info); i++) {
+    for (int i = 0; i < str_size; i++) {
         if (base_info[i] == ' ' || base_info[i] == '\n') {
             word[word_size] = '\0';
 
             if (word_idx == 0) { // id
                 base->id = word;
+                word = calloc(MAX_LEN, sizeof(char));
             }
             else if (word_idx == 1) { // xPos
                 base->x = atof(word);
@@ -52,9 +72,11 @@ void saveBase(struct BaseStation* base, char* base_info) {
             }
             else { // add other bases to list of links
                 base->listOfLinks[word_idx - 4] = word;
+                word = calloc(MAX_LEN, sizeof(char));
             }
 
-            if (base_info[i] == ' ') word = calloc(MAX_LEN, sizeof(char)); // not the end of line; there's more words to process
+            // if (base_info[i] == ' ') word = calloc(MAX_LEN, sizeof(char)); // not the end of line; there's more words to process
+            memset(word, '\0', sizeof(word)); // reset buffer
             word_size = 0;
             word_idx++;
         }
@@ -63,6 +85,53 @@ void saveBase(struct BaseStation* base, char* base_info) {
             word_size++;
         }
     }
+}
+
+void printSensor(struct Sensor* sensor) {
+    printf("Printing Sensor Info: \n ID: %s\n Range: %f\n Pos: (%f, %f)\n", sensor->id, sensor->range, sensor->x, sensor->y);
+}
+
+void saveSensor(struct Sensor* sensor, char* sensor_info) {
+    int str_size = strlen(sensor_info) + 1; // to account for the trailing '\0', add 1
+    int idx = 0;
+    char* word = calloc(MAX_LEN, sizeof(char));
+    int word_size = 0;
+    for (int i = 0; i < str_size; i++) {
+        if (sensor_info[i] == ' ' || sensor_info[i] == '\0') {
+            word[word_size] = '\0';
+
+            if (idx == 1) {
+                sensor->id = word;
+                word = calloc(MAX_LEN, sizeof(char));
+            }
+            else if (idx == 2) {
+                sensor->range = atof(word);
+            }
+            else if (idx == 3) {
+                sensor->x = atof(word);
+            }
+            else if (idx == 4) {
+                sensor->y = atof(word);
+            }
+
+            memset(word, '\0', sizeof(word)); // reset buffer
+            word_size = 0;
+            idx++;
+        }
+        else {
+            word[word_size] = sensor_info[i];
+            word_size++;
+        }
+    }
+    free(word);
+}
+
+// close an established socket and free space allocated for sensor
+void close_socket(int* server_socks, struct Sensor** sensors, int idx) {
+    close(server_socks[idx]);
+    server_socks[idx] = 0;
+    free(sensors[idx]->id);
+    free(sensors[idx]);
 }
 
 int main(int argc, char ** argv ) {
@@ -98,7 +167,7 @@ int main(int argc, char ** argv ) {
         struct BaseStation* base = (struct BaseStation*)malloc(sizeof(struct BaseStation));
         saveBase(base, base_info);
         bases[base_idx] = base;
-        // printBase(base);
+        printBase(base);
         base_idx++;
     }
 
@@ -129,9 +198,9 @@ int main(int argc, char ** argv ) {
         exit(EXIT_FAILURE);
     }
 
-    // saved sockets and names of each client
+    // saved sockets and info of each sensor (client)
     int* server_socks = calloc(MAX_CONNECTIONS, sizeof(int));
-    char** client_names = calloc(MAX_CONNECTIONS, sizeof(char*));
+    struct Sensor** sensors = calloc(MAX_CONNECTIONS, sizeof(struct Sensor*));
 
     socklen_t cli_addr_size;
 
@@ -184,15 +253,38 @@ int main(int argc, char ** argv ) {
                 num_connected++;
             }
             else {
-                // Out of connections
+                // Out of connections; close connection immediately
                 int newsockfd = accept(sockfd, (struct sockaddr *) &cliaddr, &cli_addr_size);
                 close(newsockfd);
             }
         }
 
         for (int i = 0; i < MAX_CONNECTIONS; i++) {
-            
+            if (server_socks[i] > 0 && FD_ISSET(server_socks[i], &readfds)) {
+                int n = recv(server_socks[i], buffer, MAX_LEN - 1, 0);
+                if (n == 0) {
+                    // Client closed connection
+                    FD_CLR(server_socks[i], &reads);
+                    // close_socket(server_socks, sensors, i);
+                    num_connected--;
+                }
+                else {
+                    // printf("received: %s \n", buffer);
+                    char request_type[MAX_LEN];
+                    getRequestType(buffer, request_type);
+
+                    if (strcmp(request_type, "UPDATEPOSITION") == 0) {
+                        struct Sensor* sensor = (struct Sensor*)malloc(sizeof(struct Sensor));
+                        saveSensor(sensor, buffer);
+                        sensors[i] = sensor;
+
+                        printSensor(sensors[i]);
+                    }
+                }
+            }
         }
+
+
         // for (int i = 0; i < 5; i++) {
         //     if (server_socks[i] > 0 && FD_ISSET(server_socks[i], &readfds)) {
         //         //  at least one server sent a message
@@ -285,6 +377,12 @@ int main(int argc, char ** argv ) {
 
     free(base_info);
     free(bases);
+
+    free(server_socks);
+    free(sensors);
+
+    free(buffer);
+    fclose(file);
 
     return EXIT_SUCCESS;
 }

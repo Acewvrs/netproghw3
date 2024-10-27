@@ -12,7 +12,7 @@
 #define MAX_LEN 512
 
 // send UPDATEPOSITION [SensorID] [SensorRange] [CurrentXPosition] [CurrentYPosition]
-void sendUpdatePosition(int sockfd, char* id, double range, double x, double y) {
+void sendUpdatePosition(int sockfd, char* id, float range, float x, float y) {
     char message[MAX_LEN];
 
     snprintf(message, sizeof(message), "UPDATEPOSITION %s %f %f %f", id, range, x, y);
@@ -31,9 +31,9 @@ int main(int argc, char ** argv ) {
     char* control_address = argv[1];
     int port = atoi(argv[2]);
     char* id = argv[3];
-    double range = atof(argv[4]);
-    double initX = atof(argv[5]);
-    double initY = atof(argv[6]);
+    float range = atof(argv[4]);
+    float initX = atof(argv[5]);
+    float initY = atof(argv[6]);
 
 
     int sockfd;
@@ -68,7 +68,7 @@ int main(int argc, char ** argv ) {
     printf("connected!\n");
 
     sendUpdatePosition(sockfd, id, range, initX, initY);
-    
+
     // while (true) {
 
     // }
