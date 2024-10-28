@@ -5,6 +5,7 @@
 #include <unistd.h>
 #include <stdbool.h>
 #include <ctype.h>
+#include <math.h>
 #include "../../../lib/unp.h"
 // #include "unp.h" 
 
@@ -26,6 +27,27 @@ struct Sensor {
     float y;
 };
 
+float calulateDistance(float x1, float y1, float x2, float y2) {
+    float x_dist = x1 - x2;
+    float y_dist = y1 - y2;
+    return sqrt(x_dist * x_dist + y_dist * y_dist);
+}
+
+// determines if base station and sensor are in range of each other
+bool inRangeBS(struct BaseStation* base, struct Sensor* sensor) {
+    float dist = calulateDistance(base->x, base->y, sensor->x, sensor->y);
+    if (dist <= sensor->range) return true;
+    return false;
+}
+
+// determines if two sensors are in range of each other; assume sensor1 != sensor2
+bool inRangeSS(struct Sensor* sensor1, struct Sensor* sensor2) {
+    float dist = calulateDistance(sensor1->x, sensor1->y, sensor2->x, sensor2->y);
+    if (dist <= sensor1->range && dist <= sensor2->range) return true;
+    return false;
+}
+
+// reads the first word received from client to figure msg type
 void getRequestType(const char *input, char *request_type) {
     int i = 0;
     
@@ -127,11 +149,74 @@ void saveSensor(struct Sensor* sensor, char* sensor_info) {
 }
 
 // close an established socket and free space allocated for sensor
-void close_socket(int* server_socks, struct Sensor** sensors, int idx) {
+void closeSocket(int* server_socks, struct Sensor** sensors, int idx) {
     close(server_socks[idx]);
     server_socks[idx] = 0;
     free(sensors[idx]->id);
     free(sensors[idx]);
+}
+
+void handleUpdatePosition(int sockfd, struct BaseStation** bases, int num_bases, struct Sensor** sensors, char* msg, int idx) {
+    // save sensor info
+    struct Sensor* sensor = (struct Sensor*)malloc(sizeof(struct Sensor));
+    saveSensor(sensor, msg);
+    sensors[idx] = sensor;
+
+    // printSensor(sensors[i]);
+
+    // send back REACHABLE msg
+    // REACHABLE [NumReachable] [ReachableList]
+
+    char* list = calloc(MAX_LEN / 2, sizeof(char));
+    // char list[MAX_LEN/2];
+    char fStr[MAX_LEN];
+
+    // get sensor info
+    int dist = sensor->range;
+    int x = sensor->x;
+    int y = sensor->y;
+
+    int numReachable = 0;
+    // find all reachable base stations
+    for (int i = 0; i < num_bases; i++) {
+        if (inRangeBS(bases[i], sensor)) {
+            strcat(list, " ");
+            strcat(list, bases[i]->id);
+            strcat(list, " ");
+            sprintf(fStr, "%f", bases[i]->x);
+            strcat(list, fStr);
+            strcat(list, " ");
+            sprintf(fStr, "%f", bases[i]->y);
+            strcat(list, fStr);
+            numReachable++;
+        }
+    }
+
+    // find all reachable sensors
+    for (int i = 0; i < MAX_CONNECTIONS; i++) {
+        if (idx != i && sensors[i] != NULL && inRangeSS(sensors[i], sensor)) {
+            strcat(list, " ");
+            strcat(list, bases[i]->id);
+            strcat(list, " ");
+            sprintf(fStr, "%f", bases[i]->x);
+            strcat(list, fStr);
+            strcat(list, " ");
+            sprintf(fStr, "%f", bases[i]->y);
+            strcat(list, fStr);
+            numReachable++;
+        }
+    }
+
+    // form message string in format: REACHABLE [NumReachable] [ReachableList]
+    char message[MAX_LEN];
+    snprintf(message, sizeof(message), "REACHABLE %d%s", numReachable, list);
+    printf("sending message: %s\n", message);
+
+    // finally, send message
+    send(sockfd, message, strlen(message), 0); 
+
+    // free space allocated
+    free(list);
 }
 
 int main(int argc, char ** argv ) {
@@ -167,7 +252,7 @@ int main(int argc, char ** argv ) {
         struct BaseStation* base = (struct BaseStation*)malloc(sizeof(struct BaseStation));
         saveBase(base, base_info);
         bases[base_idx] = base;
-        printBase(base);
+        // printBase(base);
         base_idx++;
     }
 
@@ -202,6 +287,11 @@ int main(int argc, char ** argv ) {
     int* server_socks = calloc(MAX_CONNECTIONS, sizeof(int));
     struct Sensor** sensors = calloc(MAX_CONNECTIONS, sizeof(struct Sensor*));
 
+    // initialize socket array to -1 
+    // for (int i=0; i< MAX_CONNECTIONS;i++){
+    //     server_socks[i]= -1;
+    // }
+
     socklen_t cli_addr_size;
 
     fd_set readfds, reads;
@@ -229,16 +319,12 @@ int main(int argc, char ** argv ) {
 
             buffer[strlen(buffer) - 1] = '\0'; // replace the newline char with null terminator
             if (strcmp(buffer, "QUIT") == 0) break;
-            // printf("input: %s", buffer);
         }
         else if (FD_ISSET(sockfd, &readfds)) { 
              // client is attempting to connect
             if (num_connected < MAX_CONNECTIONS) {
                 // printf("connected!\n");
                 int newsockfd = accept(sockfd, (struct sockaddr *) &cliaddr, &cli_addr_size);
-                // printf("Connected to port %d\n", port);
-                // sprintf(msg, "Welcome to Guess the Word, please enter your username.\n");
-                // send(newsockfd, msg, strlen(msg), 0);
 
                 // find the empty socket pos
                 for (int i = 0; i < MAX_CONNECTIONS; i++) {
@@ -248,8 +334,8 @@ int main(int argc, char ** argv ) {
                     }
                 }
 
+                // FD_SET(STDIN_FILENO, &reads);
                 FD_SET(newsockfd, &reads);
-                FD_SET(STDIN_FILENO, &reads);
                 num_connected++;
             }
             else {
@@ -259,26 +345,24 @@ int main(int argc, char ** argv ) {
             }
         }
 
+        // receive messages from sensors (clients)
         for (int i = 0; i < MAX_CONNECTIONS; i++) {
             if (server_socks[i] > 0 && FD_ISSET(server_socks[i], &readfds)) {
                 int n = recv(server_socks[i], buffer, MAX_LEN - 1, 0);
                 if (n == 0) {
                     // Client closed connection
+                    printf("closing on socket %d \n", i);
                     FD_CLR(server_socks[i], &reads);
-                    // close_socket(server_socks, sensors, i);
+                    closeSocket(server_socks, sensors, i);
                     num_connected--;
                 }
                 else {
-                    // printf("received: %s \n", buffer);
+                    // printf("message received: %s \n", buffer);
                     char request_type[MAX_LEN];
                     getRequestType(buffer, request_type);
 
                     if (strcmp(request_type, "UPDATEPOSITION") == 0) {
-                        struct Sensor* sensor = (struct Sensor*)malloc(sizeof(struct Sensor));
-                        saveSensor(sensor, buffer);
-                        sensors[i] = sensor;
-
-                        printSensor(sensors[i]);
+                        handleUpdatePosition(server_socks[i], bases, num_bases, sensors, buffer, i);
                     }
                 }
             }
@@ -379,6 +463,13 @@ int main(int argc, char ** argv ) {
     free(bases);
 
     free(server_socks);
+
+    for (int i = 0; i < MAX_CONNECTIONS; i++) {
+        if (sensors[i] != NULL) {
+            free(sensors[i]->id);
+            free(sensors[i]);
+        }
+    }
     free(sensors);
 
     free(buffer);
