@@ -11,6 +11,13 @@
 
 #define MAX_LEN 512
 
+// includes both sensors and base stations
+struct Reachable {
+    char* id;
+    float x;
+    float y;
+};
+
 // send UPDATEPOSITION [SensorID] [SensorRange] [CurrentXPosition] [CurrentYPosition]
 void sendUpdatePosition(int sockfd, char* id, float range, float x, float y) {
     char message[MAX_LEN];
@@ -21,7 +28,7 @@ void sendUpdatePosition(int sockfd, char* id, float range, float x, float y) {
     send(sockfd, message, strlen(message), 0);
 }
 
-void receiveReachable(int sockfd) {
+void receiveReachable(int sockfd, int* numReachable, struct Reachable*** reachables_ptr) {
     char message[MAX_LEN];
     int n = recv(sockfd, message, MAX_LEN - 1, 0);
     message[n] = '\0';
@@ -33,31 +40,30 @@ void receiveReachable(int sockfd) {
     char* buffer = calloc(MAX_LEN, sizeof(char));
     int word_size = 0;
 
-    // while (message[idx] != ' ') {
-    //     buffer[idx] = message[idx];
-    //     idx++;
-    // }
-
-    // int listLen = atoi(buffer);
-    // printf("listLen: %d\n", listLen);
-
+    struct Reachable** reachables;
+    struct Reachable* reachable;
+    int listLen;
     for (int i = 0; i < str_size; i++) {
         if (message[i] == ' ' || message[i] == '\0') {
             buffer[word_size] = '\0';
 
             if (idx == 1) {
-                printf("listLen: %d\n", atoi(buffer));
-                // sensor->id = word;
-                // word = calloc(MAX_LEN, sizeof(char));
+                listLen = atoi(buffer);
+                reachables = calloc(listLen, sizeof(struct Reachable*));
+                *numReachable = listLen; // save list size
             }
-            else if (idx == 2) {
-                // sensor->range = atof(word);
+            else if (1 < idx && idx <= (listLen * 3) + 1 && idx % 3 == 2) {
+                reachable = (struct Reachable*) malloc(sizeof(struct Reachable));
+                reachable->id = buffer;
+                buffer = calloc(MAX_LEN, sizeof(char));
             }
-            else if (idx == 3) {
-                // sensor->x = atof(word);
+            else if (1 < idx && idx <= (listLen * 3) + 1 && idx % 3 == 0) {
+                reachable->x = atof(buffer);
             }
-            else if (idx == 4) {
-                // sensor->y = atof(word);
+            else if (1 < idx && idx <= (listLen * 3) + 1 && idx % 3 == 1) {
+                reachable->y = atof(buffer);
+                int reachable_idx = ((idx - 1) / 3) - 1; // converts 4, 7, 10... -> 0, 1, 2...
+                reachables[reachable_idx] = reachable;
             }
 
             memset(buffer, '\0', sizeof(buffer)); // reset buffer
@@ -69,7 +75,36 @@ void receiveReachable(int sockfd) {
             word_size++;
         }
     }
+    *reachables_ptr = reachables; // save reachables list
     free(buffer);
+}
+
+void printReachableList(int size, struct Reachable** reachables) {
+    printf("printing reachable list of size %d: \n", size);
+    for (int i = 0; i < size; i++) {
+        printf("  %s (%f, %f)\n", reachables[i]->id, reachables[i]->x, reachables[i]->y);
+    }
+}
+
+int compareReachableIDs(const void* a, const void* b) {
+    return strcmp(*(const char**)a, *(const char**)b);
+}
+
+
+void printReachableResult(char* sensor_id, int size, struct Reachable** reachables) {
+    char** reachablesIDs = calloc(size, sizeof(char*));
+
+    for (int i = 0; i < size; i++) {
+        reachablesIDs[i] = reachables[i]->id;
+    }
+
+    qsort(reachablesIDs, size, sizeof(char*), compareReachableIDs);
+
+    printf("%s: After reading REACHABLE message, I can see:", sensor_id);
+    for (int i = 0; i < size; i++) {
+        printf(" %s", reachablesIDs[i]);
+    }
+    printf("\n");
 }
 
 int main(int argc, char ** argv ) {
@@ -117,9 +152,17 @@ int main(int argc, char ** argv ) {
 
     printf("connected!\n");
 
+    int numReachable;
+    struct Reachable** reachables;
+
     sendUpdatePosition(sockfd, id, range, initX, initY);
 
-    receiveReachable(sockfd);
+    receiveReachable(sockfd, &numReachable, &reachables);
+    // printReachableList(numReachable, reachables);
+    printReachableResult(id, numReachable, reachables);
+    
+    // : After reading REACHABLE message, I can see: [SortedReachableList]
+
     // while (true) {
 
     // }
