@@ -7,6 +7,7 @@
 #include <ctype.h>
 #include <math.h>
 #include "../../../lib/unp.h"
+#include "helper.c"
 // #include "unp.h" 
 
 #define MAX_LEN 512
@@ -47,17 +48,6 @@ bool inRangeSS(struct Sensor* sensor1, struct Sensor* sensor2) {
     return false;
 }
 
-// reads the first word received from client to figure msg type
-void getRequestType(const char *input, char *request_type) {
-    int i = 0;
-    
-    // Copy characters until we reach a space or the end of the input string
-    while (input[i] != ' ' && input[i] != '\0') {
-        request_type[i] = input[i];
-        i++;
-    }
-    request_type[i] = '\0'; // Null-terminate the first word
-}
 
 void printBase(struct BaseStation* base) {
     printf("Printing Base Info: \n ID: %s\n Pos: (%f, %f)\n Num Links: %d\n", base->id, base->x, base->y, base->numLinks);
@@ -160,6 +150,10 @@ void handleUpdatePosition(int sockfd, struct BaseStation** bases, int num_bases,
     // save sensor info
     struct Sensor* sensor = (struct Sensor*)malloc(sizeof(struct Sensor));
     saveSensor(sensor, msg);
+    if (sensors[idx] != NULL) {
+        free(sensors[idx]->id);
+        free(sensors[idx]);
+    }
     sensors[idx] = sensor;
 
     // printSensor(sensors[i]);
@@ -217,6 +211,24 @@ void handleUpdatePosition(int sockfd, struct BaseStation** bases, int num_bases,
 
     // free space allocated
     free(list);
+}
+
+// handles WHERE BASE_ID/SENSOR_ID
+// given id, find the base or sensor that matches the id and return its position
+void handleWhere(char* id, int numBases, struct BaseStation** bases, int numSensors, struct Sensor** sensors, float* x, float* y) {
+    for (int i = 0; i < numBases; i++) {
+        if (strcmp(bases[i]->id, id) == 0) {
+            *x = bases[i]->x;
+            *y = bases[i]->y;
+        }
+    }
+
+    for (int i = 0; i < numSensors; i++) {
+        if (strcmp(sensors[i]->id, id) == 0) {
+            *x = sensors[i]->x;
+            *y = sensors[i]->y;
+        }
+    }
 }
 
 int main(int argc, char ** argv ) {
@@ -315,10 +327,13 @@ int main(int argc, char ** argv ) {
 
         if (FD_ISSET(STDIN_FILENO, &readfds)) {
             // received user input
-            Readline(STDIN_FILENO, buffer, MAX_LEN);
+            int n = Readline(STDIN_FILENO, buffer, MAX_LEN);
 
-            buffer[strlen(buffer) - 1] = '\0'; // replace the newline char with null terminator
-            if (strcmp(buffer, "QUIT") == 0) break;
+            buffer[n-1] = '\0'; // replace the newline char with null terminator
+
+            char request_type[MAX_LEN];
+            getRequestType(buffer, request_type);
+            if (strcmp(request_type, "QUIT") == 0) break;
         }
         else if (FD_ISSET(sockfd, &readfds)) { 
              // client is attempting to connect
@@ -349,6 +364,8 @@ int main(int argc, char ** argv ) {
         for (int i = 0; i < MAX_CONNECTIONS; i++) {
             if (server_socks[i] > 0 && FD_ISSET(server_socks[i], &readfds)) {
                 int n = recv(server_socks[i], buffer, MAX_LEN - 1, 0);
+                buffer[n] = '\0'; // replace the newline char with null terminator
+
                 if (n == 0) {
                     // Client closed connection
                     printf("closing on socket %d \n", i);
@@ -363,6 +380,25 @@ int main(int argc, char ** argv ) {
 
                     if (strcmp(request_type, "UPDATEPOSITION") == 0) {
                         handleUpdatePosition(server_socks[i], bases, num_bases, sensors, buffer, i);
+                    }
+                    else if (strcmp(request_type, "WHERE") == 0) {
+                        char* id;
+                        float x;
+                        float y;
+
+                        // Use strtok to split the string by space
+                        id = strtok(buffer, " ");
+                        id = strtok(NULL, " \n\0");
+                        // printf("id: %s\n", id);
+
+                        // find the position of ID
+                        handleWhere(id, num_bases, bases, num_connected, sensors, &x, &y);
+                        // printf("found %s at (%f, %f)\n", id, x, y);
+
+                        // return THERE message to client
+                        char message[MAX_LEN];
+                        snprintf(message, sizeof(message), "THERE %f %f", x, y); // THERE [NodeID] [XPosition] [YPosition]
+                        send(server_socks[i], message, strlen(message), 0);
                     }
                 }
             }

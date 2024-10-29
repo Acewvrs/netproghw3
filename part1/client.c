@@ -7,6 +7,8 @@
 #include <ctype.h>
 #include <arpa/inet.h>
 #include "../../../lib/unp.h"
+#include "helper.c"
+
 // #include "unp.h" 
 
 #define MAX_LEN 512
@@ -26,6 +28,51 @@ void sendUpdatePosition(int sockfd, char* id, float range, float x, float y) {
     printf("sending %s\n", message);
 
     send(sockfd, message, strlen(message), 0);
+}
+
+// receive THERE command from server and save results in x, y
+void receiveThere(int sockfd, char* buffer, float* x, float* y) {
+    char message[MAX_LEN];
+    int n = recv(sockfd, message, MAX_LEN - 1, 0);
+    message[n] = '\0';
+
+    // printf("received: %s\n", message);
+    char* returned_msg;
+    returned_msg = strtok(message, " ");
+    returned_msg = strtok(NULL, " \n\0");
+    *x = atof(returned_msg);
+    returned_msg = strtok(NULL, " \n\0");
+    *y = atof(returned_msg);
+}
+
+void sendData(int sockfd, char* buffer) {
+    char* dest_id;
+    char message[MAX_LEN];
+
+    // printf("received: %s\n", message);
+    char* returned_msg;
+    returned_msg = strtok(message, " ");
+    returned_msg = strtok(NULL, " \n\0");
+    *dest_id = returned_msg;
+
+    
+}
+
+// given ID of base station/sensor, get its position from server
+void getPositionFromServer(int sockfd, char* id, float* x, float* y) {
+    char message[MAX_LEN];
+    snprintf(message, sizeof(message), "WHERE %s", id);
+    
+    send(sockfd, message, strlen(message), 0);
+    receiveThere(sockfd, message, x, y);
+}
+
+// free all dynamically allocated space for items in reachable except the array (reachables)
+void cleanReachables(const int numReachable, struct Reachable** reachables) {
+    for (int i = 0; i < numReachable; i++) {
+        free(reachables[i]->id);
+        free(reachables[i]);
+    }
 }
 
 void receiveReachable(int sockfd, int* numReachable, struct Reachable*** reachables_ptr) {
@@ -90,7 +137,7 @@ int compareReachableIDs(const void* a, const void* b) {
     return strcmp(*(const char**)a, *(const char**)b);
 }
 
-
+// print IDs of reachable base stations and sensors in alphabetical order
 void printReachableResult(char* sensor_id, int size, struct Reachable** reachables) {
     char** reachablesIDs = calloc(size, sizeof(char*));
 
@@ -107,6 +154,36 @@ void printReachableResult(char* sensor_id, int size, struct Reachable** reachabl
     printf("\n");
 }
 
+// given message that contains MOVE command from user, update x and y
+void updatePosition(char* message, float* x, float* y) {
+    int str_size = strlen(message) + 1; // add 1 to account for the trailing '\0'
+    int idx = 0;
+    char* word = calloc(MAX_LEN, sizeof(char));
+    int word_size = 0;
+    for (int i = 0; i < str_size; i++) {
+        if (message[i] == ' ' || message[i] == '\0' || message[i] == '\n') {
+            word[word_size] = '\0';
+
+            printf("idx %d word: %s\n", idx, word);
+            if (idx == 1) {
+                *x = atof(word);
+            }
+            else if (idx == 2) {
+                *y = atof(word);
+            }
+
+            memset(word, '\0', sizeof(word)); // reset buffer
+            word_size = 0;
+            idx++;
+        }
+        else {
+            word[word_size] = message[i];
+            word_size++;
+        }
+    }
+    free(word);
+}
+
 int main(int argc, char ** argv ) {
     if (argc < 7) {
         fprintf(stderr, "ERROR: Invalid argument(s)\nUSAGE: ./client.out [control address] [control port] [SensorID] [SensorRange] [InitalXPosition] [InitialYPosition]\n");
@@ -117,8 +194,8 @@ int main(int argc, char ** argv ) {
     int port = atoi(argv[2]);
     char* id = argv[3];
     float range = atof(argv[4]);
-    float initX = atof(argv[5]);
-    float initY = atof(argv[6]);
+    float x = atof(argv[5]);
+    float y = atof(argv[6]);
 
 
     int sockfd;
@@ -155,17 +232,60 @@ int main(int argc, char ** argv ) {
     int numReachable;
     struct Reachable** reachables;
 
-    sendUpdatePosition(sockfd, id, range, initX, initY);
+    sendUpdatePosition(sockfd, id, range, x, y);
 
     receiveReachable(sockfd, &numReachable, &reachables);
     // printReachableList(numReachable, reachables);
     printReachableResult(id, numReachable, reachables);
     
-    // : After reading REACHABLE message, I can see: [SortedReachableList]
+    // Initialize the file descriptor set
+    fd_set readfds;
+    FD_ZERO(&readfds);
+    FD_SET(STDIN_FILENO, &readfds); 
+    FD_SET(sockfd, &readfds);
 
-    // while (true) {
+    while (true) {
+        int num_ready = select(FD_SETSIZE, &readfds, NULL, NULL, NULL);
+        if (num_ready < 0) {
+            perror("select error");
+            exit(1);
+        }
 
-    // }
+        if (FD_ISSET(STDIN_FILENO, &readfds)) {
+            // received user input
+            int n = Readline(STDIN_FILENO, buffer, MAX_LEN);
+
+            printf("read %d chars\n", n);
+            buffer[n-1] = '\0'; // replace the newline char with null terminator
+
+            char request_type[MAX_LEN];
+            getRequestType(buffer, request_type);
+            if (strcmp(request_type, "QUIT") == 0) break;
+            else if (strcmp(request_type, "MOVE") == 0) {   // MOVE [NewXPosition] [NewYPosition]
+                cleanReachables(numReachable, reachables);  // remove every item in reachables
+                updatePosition(buffer, &x, &y);             
+                // printf("updated pos: (%f, %f)\n", x, y);
+                sendUpdatePosition(sockfd, id, range, x, y);
+
+                // after notifying server of new positions, get new list of reachable base stations/sensors,
+                receiveReachable(sockfd, &numReachable, &reachables);
+                printReachableResult(id, numReachable, reachables);
+            }
+            else if (strcmp(request_type, "WHERE") == 0) { 
+                // USER WON'T DIRECTLY CALL IT...
+                float pos_x;
+                float pos_y;
+                getPositionFromServer(sockfd, "client1", &pos_x, &pos_y);
+                printf("received client for pos: %f, %f\n", pos_x, pos_y);
+            }
+            else if (strcmp(request_type, "SENDDATA") == 0) {
+                
+            }
+        }
+        else if (FD_ISSET(sockfd, &readfds)) {
+            
+        }
+    }
 
     // send(sockfd, message, strlen(message), 0);
     // printf("Message sent to server: %s\n", message);
