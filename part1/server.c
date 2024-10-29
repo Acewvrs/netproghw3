@@ -1,14 +1,4 @@
-#include <sys/types.h>
-#include <string.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <unistd.h>
-#include <stdbool.h>
-#include <ctype.h>
-#include <math.h>
-#include "../../../lib/unp.h"
 #include "helper.c"
-// #include "unp.h" 
 
 #define MAX_LEN 512
 #define MAX_CONNECTIONS 10
@@ -28,12 +18,6 @@ struct Sensor {
     float y;
 };
 
-float calulateDistance(float x1, float y1, float x2, float y2) {
-    float x_dist = x1 - x2;
-    float y_dist = y1 - y2;
-    return sqrt(x_dist * x_dist + y_dist * y_dist);
-}
-
 // determines if base station and sensor are in range of each other
 bool inRangeBS(struct BaseStation* base, struct Sensor* sensor) {
     float dist = calulateDistance(base->x, base->y, sensor->x, sensor->y);
@@ -47,7 +31,6 @@ bool inRangeSS(struct Sensor* sensor1, struct Sensor* sensor2) {
     if (dist <= sensor1->range && dist <= sensor2->range) return true;
     return false;
 }
-
 
 void printBase(struct BaseStation* base) {
     printf("Printing Base Info: \n ID: %s\n Pos: (%f, %f)\n Num Links: %d\n", base->id, base->x, base->y, base->numLinks);
@@ -158,9 +141,6 @@ void handleUpdatePosition(int sockfd, struct BaseStation** bases, int num_bases,
 
     // printSensor(sensors[i]);
 
-    // send back REACHABLE msg
-    // REACHABLE [NumReachable] [ReachableList]
-
     char* list = calloc(MAX_LEN / 2, sizeof(char));
     // char list[MAX_LEN/2];
     char fStr[MAX_LEN];
@@ -170,6 +150,7 @@ void handleUpdatePosition(int sockfd, struct BaseStation** bases, int num_bases,
     int x = sensor->x;
     int y = sensor->y;
 
+    // populate the list of reachable
     int numReachable = 0;
     // find all reachable base stations
     for (int i = 0; i < num_bases; i++) {
@@ -206,7 +187,7 @@ void handleUpdatePosition(int sockfd, struct BaseStation** bases, int num_bases,
     snprintf(message, sizeof(message), "REACHABLE %d%s", numReachable, list);
     printf("sending message: %s\n", message);
 
-    // finally, send message
+    // finally, send back REACHABLE msg
     send(sockfd, message, strlen(message), 0); 
 
     // free space allocated
@@ -399,6 +380,9 @@ int main(int argc, char ** argv ) {
                         char message[MAX_LEN];
                         snprintf(message, sizeof(message), "THERE %f %f", x, y); // THERE [NodeID] [XPosition] [YPosition]
                         send(server_socks[i], message, strlen(message), 0);
+                    }
+                    else if (strcmp(request_type, "SENDDATA") == 0) {
+                        printf("msg: %s\n", buffer);
                     }
                 }
             }
