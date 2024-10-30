@@ -196,7 +196,7 @@ void handleUpdatePosition(int sockfd, struct BaseStation** bases, int num_bases,
 
 // handles WHERE BASE_ID/SENSOR_ID
 // given id, find the base or sensor that matches the id and return its position
-void handleWhere(char* id, int numBases, struct BaseStation** bases, int numSensors, struct Sensor** sensors, float* x, float* y) {
+void getPosition(char* id, int numBases, struct BaseStation** bases, struct Sensor** sensors, float* x, float* y) {
     for (int i = 0; i < numBases; i++) {
         if (strcmp(bases[i]->id, id) == 0) {
             *x = bases[i]->x;
@@ -204,8 +204,8 @@ void handleWhere(char* id, int numBases, struct BaseStation** bases, int numSens
         }
     }
 
-    for (int i = 0; i < numSensors; i++) {
-        if (strcmp(sensors[i]->id, id) == 0) {
+    for (int i = 0; i < MAX_CONNECTIONS; i++) {
+        if (sensors[i] != NULL && strcmp(sensors[i]->id, id) == 0) {
             *x = sensors[i]->x;
             *y = sensors[i]->y;
         }
@@ -221,6 +221,47 @@ int isSensor(char* id, struct Sensor** sensors) {
         }
     }
     return -1;
+}
+
+// given base ID, we return the base station object associated with it
+// note that it is guaranteed that the ID is valid
+struct BaseStation* getBaseObject(char* base_id, int numBases, struct BaseStation** bases) {
+    for (int i = 0; i < numBases; i++) {
+        if (strcmp(bases[i]->id, base_id) == 0) {
+            return bases[i];
+        }
+    }
+    return NULL;
+}
+
+// given a base, find all reachable bases (connected) or sensors (in range);
+// return the complete list as returned_list and its size as list_size
+void getReachableIDsForBase(char* base_id, int numBases, struct BaseStation** bases, int numConnected, struct Sensor** sensors, int* list_size, char*** returned_list) {
+    struct BaseStation* base = getBaseObject(base_id, numBases, bases);
+
+    // initialize list
+    int numLinks = base->numLinks;
+    char** list = calloc(numLinks + numConnected, sizeof(char*));
+
+    // add all bases connected to base_id to the reachable list
+    for (int i = 0; i < numLinks; i++) {
+        list[i] = calloc(MAX_LEN, sizeof(char));
+        strcpy(list[i], base->listOfLinks[i]);
+    }
+
+    // find sensors in range
+    int idx = numLinks;
+    for (int i = 0; i < MAX_CONNECTIONS; i++) {
+        if (sensors[i] != NULL && inRangeBS(base, sensors[i])) {
+            list[idx] = calloc(MAX_LEN, sizeof(char));
+            strcpy(list[idx], sensors[i]->id);
+            idx++;
+        }
+    }
+
+    // return list and its size
+    *list_size = idx;
+    *returned_list = list;
 }
 
 int main(int argc, char ** argv ) {
@@ -384,7 +425,8 @@ int main(int argc, char ** argv ) {
                         // printf("id: %s\n", id);
 
                         // find the position of ID
-                        handleWhere(id, num_bases, bases, num_connected, sensors, &x, &y);
+                        // getPosition(id, num_bases, bases, num_connected, sensors, &x, &y);
+                        getPosition(id, num_bases, bases, sensors, &x, &y);
                         // printf("found %s at (%f, %f)\n", id, x, y);
 
                         // return THERE message to client
@@ -405,7 +447,6 @@ int main(int argc, char ** argv ) {
                         char* hop_list_str = strtok(NULL, " ");
                         // char* hop_list_str = calloc(25, sizeof(char));
                         // strcpy(hop_list_str, "THIS IS A TEST");
-
                         createHopListFromStr(hop_list_str, hop_list);
 
                         // printf("printing hop_list: \n");
@@ -415,13 +456,48 @@ int main(int argc, char ** argv ) {
                         // printf("msg: %s\n", buffer);
 
                         // before doing anything, determine if this message's next destination is a sensor
-                        int sensor_idx = isSensor("client1", sensors);
+                        // if sensor, send message directly to it
+                        // int sensor_idx = isSensor("client1", sensors);
+                        int sensor_idx = isSensor(next_id, sensors);
                         printf("sensor idx: %d\n", sensor_idx);
+                        // if (sensor_idx >= 0) {
+                        //     printf("sending: %s\n", buffer);
+                        //     send(server_socks[sensor_idx], buffer, strlen(buffer), 0);
+                        //     continue;
+                        // }
+                        
+
+                        // run this loop while next id is a base station OR until dest reached
+                        while (sensor_idx < 0) {
+                            // message reached dest
+                            if (strcmp(next_id, dest_id) == 0) {
+                                printf("%s: Message from %s to %s successfully received.", dest_id, orig_id, dest_id);
+                                break;
+                            }
+
+                            // while in this loop, we assume the message is sent from the base station, next_id
+                            
+                            // first, get all reachable base stations/sensors
+                            
+                        }
+
                         if (sensor_idx >= 0) {
                             printf("sending: %s\n", buffer);
                             send(server_socks[sensor_idx], buffer, strlen(buffer), 0);
                         }
-                        
+        
+                    }
+                   else if (strcmp(request_type, "TEST") == 0) {
+                        // FOR DEBUGGING PURPOSES ONLY
+                        int list_size;
+                        char** reachables;
+                        getReachableIDsForBase("base_station_h", num_bases, bases, num_connected, sensors, &list_size, &reachables);
+
+                        printf("reachable list: \n");
+                        for (int i = 0; i < list_size; i++) {
+                            printf("%s ", reachables[i]);
+                        }
+                        printf("\n");
                     }
                 }
             }

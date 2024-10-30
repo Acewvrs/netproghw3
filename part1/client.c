@@ -229,13 +229,6 @@ bool chooseNextID(int num_reachable, struct Reachable** reachables, int list_siz
     return false;
 }
 
-// void makeHopListFromString(char* list_str) {
-//     char word[MAX_LEN];
-
-//     word = strtok(list_str, " ");
-//     dest_id = strtok(NULL, " \n\0");
-// }
-
 void cleanList(int list_size, char** hop_list) {
     for (int i = 0; i < list_size; i++) {
         free(hop_list[i]);
@@ -388,6 +381,10 @@ int main(int argc, char ** argv ) {
 
                 // clean memory of hop list we allocated
                 cleanList(list_size, hop_list);
+            }
+            else if (strcmp(request_type, "TEST") == 0) {
+                // FOR DEBUGGING PURPOSES ONLY
+                send(sockfd, buffer, sizeof(buffer), 0);
             }
         }
         else if (FD_ISSET(sockfd, &readfds)) {
