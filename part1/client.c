@@ -297,11 +297,16 @@ int main(int argc, char ** argv ) {
     
     // Initialize the file descriptor set
     fd_set readfds;
-    FD_ZERO(&readfds);
-    FD_SET(STDIN_FILENO, &readfds); 
-    FD_SET(sockfd, &readfds);
+    // FD_ZERO(&readfds);
+    // FD_SET(STDIN_FILENO, &readfds); 
+    // FD_SET(sockfd, &readfds);
 
     while (true) {
+        // reinitialize read file descriptors because select() resets it
+        FD_ZERO(&readfds);
+        FD_SET(STDIN_FILENO, &readfds); 
+        FD_SET(sockfd, &readfds);
+
         int num_ready = select(FD_SETSIZE, &readfds, NULL, NULL, NULL);
         if (num_ready < 0) {
             perror("select error");
@@ -354,6 +359,7 @@ int main(int argc, char ** argv ) {
 
                 // first, check if dest is reachable
                 if (isDestReachable(num_reachable, reachables, dest_id)) {
+                    printf("%s: Sent a new message directly to %s\n", id, dest_id);
                     sendData(sockfd, id, dest_id, dest_id, list_size, id);
                     continue;
                 }
@@ -377,6 +383,7 @@ int main(int argc, char ** argv ) {
                 // printf("next id: %s\n", next_id);
                 
                 // finally, send data to that base station/sensor through control center
+                printf("%s: Sent a new message bound for %s\n", id, dest_id);
                 sendData(sockfd, id, next_id, dest_id, list_size, hop_list[0]);
 
                 // clean memory of hop list we allocated
@@ -384,11 +391,77 @@ int main(int argc, char ** argv ) {
             }
         }
         else if (FD_ISSET(sockfd, &readfds)) {
-            // received user input
-            // int n = Readline(sockfd, buffer, MAX_LEN);
-            // buffer[n-1] = '\0'; // replace the newline char with null terminator
+            int n = recv(sockfd, buffer, MAX_LEN - 1, 0); // since server won't have newline in the end, use recv
+            if (n == 0) {
+                printf("Server closed the connection\n");
+                close(sockfd);
+                break;
+            } 
+            else if (n < 0) {
+                perror("recv error");
+            }
+            buffer[n] = '\0';  // Null-terminate the received data
 
-            // char request_type[MAX_LEN];
+            // parse data message
+            char* request_type = strtok(buffer, " ");
+            char* orig_id = strtok(NULL, " ");
+            strtok(NULL, " "); // next_id
+            char* dest_id = strtok(NULL, " ");
+            int list_size = atoi(strtok(NULL, " "));
+            char** hop_list = calloc(list_size, sizeof(char*));
+            char* hop_list_str = strtok(NULL, " ");
+            createHopListFromStr(hop_list_str, hop_list);
+
+            // message reached dest
+            if (strcmp(id, dest_id) == 0) {
+                printf("%s: Message from %s to %s successfully received.", id, orig_id, dest_id);
+                continue;
+            }
+
+            // before sending data, get the latest list of reachables
+            sendUpdatePosition(sockfd, id, range, x, y);
+            receiveReachable(sockfd, &num_reachable, &reachables);
+
+            // first, check if dest is reachable
+            if (isDestReachable(num_reachable, reachables, dest_id)) {
+                // add this sensor to the list of visited IDs
+                strcat(hop_list_str, " ");
+                strcat(hop_list_str, id); 
+                list_size++;
+
+                sendData(sockfd, id, dest_id, dest_id, list_size, id);
+                continue;
+            }
+
+            // if not reachable, then client sends WHERE to get position of dest_id
+            float dest_x;
+            float dest_y;
+            getPositionFromServer(sockfd, dest_id, &dest_x, &dest_y);
+
+            // then, it sorts all in-range sensors and base stations by distance to the destination
+            saveDistanceToDest(num_reachable, reachables, dest_x, dest_y);
+            qsort(reachables, num_reachable, sizeof(struct Reachable*), compareReachableByDistance);
+            // printReachableList(num_reachable, reachables);
+
+            // next, choose the first base station/sensor that we haven't visited
+            char* next_id;
+            if (!chooseNextID(num_reachable, reachables, list_size, hop_list, &next_id)) {
+                printf("%s: Message from %s to %s could not be delivered.", id, orig_id, dest_id);
+                continue;
+            }
+            // printf("next id: %s\n", next_id);
+            
+            // add this sensor to the list of visited IDs
+            strcat(hop_list_str, " ");
+            strcat(hop_list_str, id); 
+            list_size++;
+            
+            // finally, send data to that base station/sensor through control center
+            printf("%s: Message from %s to %s being forwarded through %s\n", id, orig_id, dest_id, id);
+            sendData(sockfd, id, next_id, dest_id, list_size, hop_list_str);
+
+            // clean memory of hop list we allocated
+            cleanList(list_size, hop_list);
         }
     }
 

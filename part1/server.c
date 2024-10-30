@@ -212,6 +212,17 @@ void handleWhere(char* id, int numBases, struct BaseStation** bases, int numSens
     }
 }
 
+// if the given ID is a sensor, return its socket index
+// if not, return -1
+int isSensor(char* id, struct Sensor** sensors) {
+    for (int i = 0; i < MAX_CONNECTIONS; i++) {
+        if (sensors[i] != NULL && strcmp(sensors[i]->id, id) == 0) {
+            return i;
+        }
+    }
+    return -1;
+}
+
 int main(int argc, char ** argv ) {
     if (argc != 3) {
         fprintf(stderr, "ERROR: Invalid argument(s)\nUSAGE: ./control.out  [control port] [base station file]\n");
@@ -381,95 +392,40 @@ int main(int argc, char ** argv ) {
                         snprintf(message, sizeof(message), "THERE %f %f", x, y); // THERE [NodeID] [XPosition] [YPosition]
                         send(server_socks[i], message, strlen(message), 0);
                     }
-                    else if (strcmp(request_type, "SENDDATA") == 0) {
-                        printf("msg: %s\n", buffer);
+                    else if (strcmp(request_type, "DATAMESSAGE") == 0) {
+                        printf("received: %s\n", buffer);
+                        // first, we parse data message
+                        strtok(buffer, " "); // read "DATAMESSAGE"
+                        char* orig_id = strtok(NULL, " ");
+                        char* next_id = strtok(NULL, " ");
+                        char* dest_id = strtok(NULL, " ");
+                        int list_size = atoi(strtok(NULL, " "));
+                        
+                        char** hop_list = calloc(list_size, sizeof(char*));
+                        char* hop_list_str = strtok(NULL, " ");
+                        // char* hop_list_str = calloc(25, sizeof(char));
+                        // strcpy(hop_list_str, "THIS IS A TEST");
+
+                        createHopListFromStr(hop_list_str, hop_list);
+
+                        // printf("printing hop_list: \n");
+                        // for (int i = 0; i < list_size; i++) {
+                        //     printf("  %s\n", hop_list[i]);
+                        // }
+                        // printf("msg: %s\n", buffer);
+
+                        // before doing anything, determine if this message's next destination is a sensor
+                        int sensor_idx = isSensor("client1", sensors);
+                        printf("sensor idx: %d\n", sensor_idx);
+                        if (sensor_idx >= 0) {
+                            printf("sending: %s\n", buffer);
+                            send(server_socks[sensor_idx], buffer, strlen(buffer), 0);
+                        }
+                        
                     }
                 }
             }
         }
-
-
-        // for (int i = 0; i < 5; i++) {
-        //     if (server_socks[i] > 0 && FD_ISSET(server_socks[i], &readfds)) {
-        //         //  at least one server sent a message
-        //         int n = recv(server_socks[i], buffer, MAX_LEN - 1, 0);
-        //         if (n == 0) {
-        //             // Client closed connection
-        //             FD_CLR(server_socks[i], &reads);
-        //             close_socket(server_socks, usernames, i);
-        //             num_connected--;
-        //         } 
-        //         else if (n > 0) {
-        //             remove_newline(buffer);
-        //             buffer[stringSize(buffer)] = '\0';
-                        
-        //             if (usernames[i] == NULL) {
-        //                 // user is setting the username
-        //                 char* username = calloc(strlen(buffer), sizeof(char));
-        //                 strcpy(username, buffer);
-
-        //                 // check if the username is already in use
-        //                 bool duplicate = false;
-        //                 for (int j = 0; j < 5; j++) {
-        //                     if (usernames[j] == NULL) continue;
-                            
-        //                     // compare the usernames without modifying the original input
-        //                     char* username_in_use = calloc(strlen(usernames[j]), sizeof(char));
-        //                     strcpy(username_in_use, usernames[j]);
-        //                     if (strcmp(tolower_string(username_in_use), tolower_string(buffer)) == 0) {
-        //                         duplicate = true;
-        //                     }
-        //                     free(username_in_use);
-        //                 }
-                       
-        //                 if (!duplicate) {
-        //                     usernames[i] = username;
-        //                     sprintf(msg, "Let's start playing, %s\n", usernames[i]);
-        //                     send(server_socks[i], msg, strlen(msg), 0);    
-        //                     sprintf(msg, "There are %d player(s) playing. The secret word is %d letter(s).\n", num_connected, stringSize(hidden_word));
-        //                 }
-        //                 else {
-        //                     sprintf(msg, "Username %s is already taken, please enter a different username\n", username);
-        //                 }
-        //                 send(server_socks[i], msg, strlen(msg), 0);                      
-        //             }
-        //             else {
-        //                 // user is guessing the word
-        //                 int guess_len = stringSize(buffer);
-        //                 if (guess_len != stringSize(hidden_word)) {
-        //                     sprintf(msg, "Invalid guess length. The secret word is %d letter(s).\n", stringSize(hidden_word));
-        //                     send(server_socks[i], msg, strlen(msg), 0);
-        //                 }
-        //                 else {
-        //                     // send guess result to every other client
-        //                     int exact_match = strings_position_match(hidden_word, buffer);
-        //                     int letters_match = strings_letters_match(hidden_word, buffer);
-
-        //                     // check if the guess is correct
-        //                     if (letters_match == stringSize(hidden_word)) {
-        //                         sprintf(msg, "%s has correctly guessed the word %s", usernames[i], hidden_word);
-        //                         guess_correct = true;
-        //                     }
-        //                     else {
-        //                         sprintf(msg, "%s guessed %s: %d letter(s) were correct and %d letter(s) were correctly placed.\n", usernames[i], buffer, letters_match, exact_match);
-        //                     }
-
-        //                     for (int j = 0; j < 5; j++) {
-        //                         if (usernames[j] == NULL) continue;
-        //                         send(server_socks[j], msg, strlen(msg), 0);
-
-        //                         if (guess_correct) {
-        //                             // close the socket after a user guessed the secret word
-        //                             FD_CLR(server_socks[i], &reads);
-        //                             close_socket(server_socks, usernames, j);
-        //                             num_connected--;
-        //                         }
-        //                     }
-        //                 }
-        //             }
-        //         }
-        //     }
-        // }
     }
 
     // free dynamically allocated space

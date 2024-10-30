@@ -11,6 +11,18 @@
 #include "../../../lib/unp.h"
 // #include "unp.h" 
 
+// initialize a list of IDs from a string where items are separated by commas
+// e.g. "client1 client2 client3" -> ["client1", "client2", "client3"]
+void createHopListFromStr(char* hop_list_str, char** hop_list) {
+    char* id = strtok(hop_list_str, " ");
+    int idx = 0;
+    while (id) {
+        hop_list[idx] = id;
+        id = strtok(NULL, " \0\n");
+        idx++;
+    }
+}
+
 // reads the first word received from client to figure msg type
 void getRequestType(const char *input, char *request_type) {
     int i = 0;
