@@ -1,6 +1,5 @@
 #include "helper.c"
 
-#define MAX_LEN 512
 #define MAX_CONNECTIONS 10
 
 struct BaseStation {
@@ -185,7 +184,7 @@ void handleUpdatePosition(int sockfd, struct BaseStation** bases, int num_bases,
     // form message string in format: REACHABLE [NumReachable] [ReachableList]
     char message[MAX_LEN];
     snprintf(message, sizeof(message), "REACHABLE %d%s", numReachable, list);
-    printf("sending message: %s\n", message);
+    // printf("sending message: %s\n", message);
 
     // finally, send back REACHABLE msg
     send(sockfd, message, strlen(message), 0); 
@@ -236,25 +235,43 @@ struct BaseStation* getBaseObject(char* base_id, int numBases, struct BaseStatio
 
 // given a base, find all reachable bases (connected) or sensors (in range);
 // return the complete list as returned_list and its size as list_size
-void getReachableIDsForBase(char* base_id, int numBases, struct BaseStation** bases, int numConnected, struct Sensor** sensors, int* list_size, char*** returned_list) {
+void getReachableIDsForBase(char* base_id, int numBases, struct BaseStation** bases, int numConnected, struct Sensor** sensors, int* list_size, struct Reachable*** returned_list) {
     struct BaseStation* base = getBaseObject(base_id, numBases, bases);
 
     // initialize list
     int numLinks = base->numLinks;
-    char** list = calloc(numLinks + numConnected, sizeof(char*));
+    struct Reachable** list = calloc(numLinks + numConnected, sizeof(struct Reachable*));
 
     // add all bases connected to base_id to the reachable list
     for (int i = 0; i < numLinks; i++) {
-        list[i] = calloc(MAX_LEN, sizeof(char));
-        strcpy(list[i], base->listOfLinks[i]);
+        struct Reachable* r = (struct Reachable*)malloc(sizeof(struct Reachable));
+        r->id = calloc(MAX_LEN, sizeof(char));
+        strcpy(r->id, base->listOfLinks[i]);
+
+        // calculate the distance between current base and connected base
+        float connected_x;
+        float connected_y;
+        getPosition(base->listOfLinks[i], numBases, bases, sensors, &connected_x, &connected_y);
+        r->distToDest = calulateDistance(base->x, base->y, connected_x, connected_y);
+
+        list[i] = r;
     }
 
     // find sensors in range
     int idx = numLinks;
     for (int i = 0; i < MAX_CONNECTIONS; i++) {
         if (sensors[i] != NULL && inRangeBS(base, sensors[i])) {
-            list[idx] = calloc(MAX_LEN, sizeof(char));
-            strcpy(list[idx], sensors[i]->id);
+            struct Reachable* r = (struct Reachable*)malloc(sizeof(struct Reachable));
+            r->id = calloc(MAX_LEN, sizeof(char));
+            strcpy(r->id, sensors[i]->id);
+
+            // calculate the distance between current base and connected base
+            float connected_x;
+            float connected_y;
+            getPosition(sensors[i]->id, numBases, bases, sensors, &connected_x, &connected_y);
+            r->distToDest = calulateDistance(base->x, base->y, connected_x, connected_y);
+
+            list[idx] = r;
             idx++;
         }
     }
@@ -409,7 +426,8 @@ int main(int argc, char ** argv ) {
                 else {
                     // printf("message received: %s \n", buffer);
                     char request_type[MAX_LEN];
-                    getRequestType(buffer, request_type);
+                    getRequestType(buffer, request_type); 
+                    // OR strtok(buffer, " \0\n");
 
                     if (strcmp(request_type, "UPDATEPOSITION") == 0) {
                         handleUpdatePosition(server_socks[i], bases, num_bases, sensors, buffer, i);
@@ -447,6 +465,7 @@ int main(int argc, char ** argv ) {
                         char* hop_list_str = strtok(NULL, " ");
                         // char* hop_list_str = calloc(25, sizeof(char));
                         // strcpy(hop_list_str, "THIS IS A TEST");
+
                         createHopListFromStr(hop_list_str, hop_list);
 
                         // printf("printing hop_list: \n");
@@ -457,45 +476,86 @@ int main(int argc, char ** argv ) {
 
                         // before doing anything, determine if this message's next destination is a sensor
                         // if sensor, send message directly to it
-                        // int sensor_idx = isSensor("client1", sensors);
                         int sensor_idx = isSensor(next_id, sensors);
-                        printf("sensor idx: %d\n", sensor_idx);
-                        // if (sensor_idx >= 0) {
-                        //     printf("sending: %s\n", buffer);
-                        //     send(server_socks[sensor_idx], buffer, strlen(buffer), 0);
-                        //     continue;
-                        // }
-                        
+                        // int sensor_idx = isSensor("client1", sensors);
+                        printf("sensor idx: %d\n", sensor_idx);      
 
-                        // run this loop while next id is a base station OR until dest reached
+                        // run this loop while next ID is a base station OR until dest reached
+                        // in the beginning of the loop, we're "on" the base station of next_id
+                        int num_reachables;
+                        struct Reachable** reachables;
                         while (sensor_idx < 0) {
                             // message reached dest
                             if (strcmp(next_id, dest_id) == 0) {
-                                printf("%s: Message from %s to %s successfully received.", dest_id, orig_id, dest_id);
+                                printf("%s: Message from %s to %s successfully received.\n", dest_id, orig_id, dest_id);
                                 break;
                             }
 
                             // while in this loop, we assume the message is sent from the base station, next_id
                             
+
                             // first, get all reachable base stations/sensors
+                            getReachableIDsForBase(next_id, num_bases, bases, num_connected, sensors, &num_reachables, &reachables);
                             
+                            // sort the list based on distance, then lexicographically
+                            qsort(reachables, num_reachables, sizeof(struct Reachable*), compareReachableByDistance);
+                            
+                            // next, choose the first base station/sensor that we haven't visited
+                            char* prev_id = next_id;
+                            if (!chooseNextID(num_reachables, reachables, list_size, hop_list, &next_id)) {
+                                sensor_idx = -1;
+                                printf("%s: Message from %s to %s could not be delivered.\n", prev_id, orig_id, dest_id);
+                                break;
+                            }
+                            
+                            // print current state of message
+                            if (strcmp(orig_id, prev_id) != 0) {
+                                printf("%s: Message from %s to %s being forwarded through %s\n", prev_id, orig_id, dest_id, prev_id);
+                            }
+                            else if (strcmp(next_id, dest_id) == 0) {
+                                printf("%s: Sent a new message directly to %s\n", prev_id, dest_id);
+                            }
+                            else {
+                                printf("%s: Message from %s to %s bound for %s\n", prev_id, orig_id, dest_id, prev_id);
+                            }
+
+                            // determine if the next id is a sensor
+                            sensor_idx = isSensor(next_id, sensors);
+                            printf("sensor idx: %d\n", sensor_idx);    
+
+                            // update hop list
+                            addToHopList(hop_list_str, prev_id);
+                            list_size++;
+                            printf("hop list: %s\n", hop_list_str);
+
+                            // clean memory of hop list we allocated
+                            cleanReachables(num_reachables, reachables);
                         }
 
                         if (sensor_idx >= 0) {
                             printf("sending: %s\n", buffer);
-                            send(server_socks[sensor_idx], buffer, strlen(buffer), 0);
+                            // send(server_socks[sensor_idx], buffer, strlen(buffer), 0);
+                            sendData(server_socks[sensor_idx], orig_id, next_id, dest_id, list_size, hop_list_str);
                         }
         
                     }
-                   else if (strcmp(request_type, "TEST") == 0) {
+                    else if (strcmp(request_type, "TEST") == 0) {
                         // FOR DEBUGGING PURPOSES ONLY
-                        int list_size;
-                        char** reachables;
-                        getReachableIDsForBase("base_station_h", num_bases, bases, num_connected, sensors, &list_size, &reachables);
+                        int num_reachables;
+                        struct Reachable** reachables;
+                        getReachableIDsForBase("base_station_a", num_bases, bases, num_connected, sensors, &num_reachables, &reachables);
 
                         printf("reachable list: \n");
-                        for (int i = 0; i < list_size; i++) {
-                            printf("%s ", reachables[i]);
+                        for (int i = 0; i < num_reachables; i++) {
+                            printf("%s ", reachables[i]->id);
+                        }
+                        printf("\n");
+
+                        qsort(reachables, num_reachables, sizeof(struct Reachable*), compareReachableByDistance);
+
+                        printf("sorted reachable list: \n");
+                        for (int i = 0; i < num_reachables; i++) {
+                            printf("%s ", reachables[i]->id);
                         }
                         printf("\n");
                     }

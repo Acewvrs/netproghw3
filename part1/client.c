@@ -2,14 +2,6 @@
 
 #define MAX_LEN 512
 
-// includes both sensors and base stations
-struct Reachable {
-    char* id;
-    float x;
-    float y;
-    float distToDest;
-};
-
 // check if the id of dest is in the list of reachables
 bool isDestReachable(const int num_reachable, struct Reachable** reachables, char* dest_id) {
     for (int i = 0; i < num_reachable; i++) {
@@ -45,12 +37,6 @@ void receiveThere(int sockfd, char* buffer, float* x, float* y) {
     *y = atof(returned_msg);
 }
 
-void sendData(int sockfd, char* origin_id, char* next_id, char* dest_id, int list_len, char* hop_list) {
-    char message[MAX_LEN];
-    snprintf(message, sizeof(message), "DATAMESSAGE %s %s %s %d %s", origin_id, next_id, dest_id, list_len, hop_list);
-    send(sockfd, message, strlen(message), 0);
-}
-
 // given ID of base station/sensor, get its position from server
 void getPositionFromServer(int sockfd, char* id, float* x, float* y) {
     char message[MAX_LEN];
@@ -58,14 +44,6 @@ void getPositionFromServer(int sockfd, char* id, float* x, float* y) {
     
     send(sockfd, message, strlen(message), 0);
     receiveThere(sockfd, message, x, y);
-}
-
-// free all dynamically allocated space for items in reachable except the array (reachables)
-void cleanReachables(const int num_reachable, struct Reachable** reachables) {
-    for (int i = 0; i < num_reachable; i++) {
-        free(reachables[i]->id);
-        free(reachables[i]);
-    }
 }
 
 void receiveReachable(int sockfd, int* num_reachable, struct Reachable*** reachables_ptr) {
@@ -119,11 +97,17 @@ void receiveReachable(int sockfd, int* num_reachable, struct Reachable*** reacha
     free(buffer);
 }
 
+// print each item in reachable list in the format:
+// ['base_station_a', 'base_station_b', 'base_station_d', 'base_station_e']
 void printReachableList(int size, struct Reachable** reachables) {
-    printf("printing reachable list of size %d: \n", size);
+    // printf("printing reachable list of size %d: \n", size);
+    // ['base_station_a', 'base_station_b', 'base_station_d', 'base_station_e']
+    printf("[");
     for (int i = 0; i < size; i++) {
-        printf("  %s (%f, %f)\n", reachables[i]->id, reachables[i]->x, reachables[i]->y);
+        printf("'%s'", reachables[i]->id);
+        if (i != size - 1) printf(", ");
     }
+    printf("]");
 }
 
 // compare function for sorting IDs (string) in a list alphabetically
@@ -141,10 +125,11 @@ void printReachableResult(char* sensor_id, int size, struct Reachable** reachabl
 
     qsort(reachablesIDs, size, sizeof(char*), compareReachableIDs);
 
-    printf("%s: After reading REACHABLE message, I can see:", sensor_id);
-    for (int i = 0; i < size; i++) {
-        printf(" %s", reachablesIDs[i]);
-    }
+    printf("%s: After reading REACHABLE message, I can see: ", sensor_id);
+    // for (int i = 0; i < size; i++) {
+    //     printf(" %s", reachablesIDs[i]);
+    // }
+    printReachableList(size, reachables);
     printf("\n");
 }
 
@@ -158,7 +143,6 @@ void updatePosition(char* message, float* x, float* y) {
         if (message[i] == ' ' || message[i] == '\0' || message[i] == '\n') {
             word[word_size] = '\0';
 
-            printf("idx %d word: %s\n", idx, word);
             if (idx == 1) {
                 *x = atof(word);
             }
@@ -183,50 +167,6 @@ void saveDistanceToDest(int num_reachable, struct Reachable** reachables, float 
     for (int i = 0; i < num_reachable; i++) {
         reachables[i]->distToDest = calulateDistance(reachables[i]->x, reachables[i]->y, dest_x, dest_y);
     }
-}
-
-int isFloatZero(float value) {
-    const float epsilon = 1e-6; // Tolerance value
-    return fabs(value) < epsilon;
-}
-
-// compare function for sorting IDs (string) in a list alphabetically
-int compareReachableByDistance(const void* a, const void* b) {
-    struct Reachable* r1 = *(struct Reachable**)a;
-    struct Reachable* r2 = *(struct Reachable**)b;
-
-    float diff = r1->distToDest - r2->distToDest;
-
-    if (isFloatZero(diff)) { 
-        // the distance to dest is the same
-        // resolve ties by choosing the lexicographically smaller ID
-        return strcmp(r1->id, r2->id); 
-    }
-    
-    if (diff < 0) return -1;
-    return 1;
-}
- 
-// check if list contains given ID; if yes, we've visited the ID
-bool isVisited(int list_size, char** hop_list, char* id) {
-    for (int i = 0; i < list_size; i++) {
-        if (strcmp(hop_list[i], id) == 0) {
-            return true;
-        }
-    }
-    return false;
-}
-
-// return false if there's no reachable base station/sensor to send next message to
-// otherwise, return true and set next_id;
-bool chooseNextID(int num_reachable, struct Reachable** reachables, int list_size, char** hop_list, char** next_id) {
-    for (int i = 0; i < num_reachable; i++) {
-        if (!isVisited(list_size, hop_list, reachables[i]->id)) {
-            *next_id = reachables[i]->id;
-            return true;
-        }
-    }
-    return false;
 }
 
 void cleanList(int list_size, char** hop_list) {
@@ -336,6 +276,7 @@ int main(int argc, char ** argv ) {
                 // before sending data, get the latest list of reachables
                 sendUpdatePosition(sockfd, id, range, x, y);
                 receiveReachable(sockfd, &num_reachable, &reachables);
+                printReachableResult(id, num_reachable, reachables);
 
                 // and create a list that contains the stations/sensors we've visited
                 // currently, there's only one in the list (self)
@@ -422,8 +363,9 @@ int main(int argc, char ** argv ) {
             // first, check if dest is reachable
             if (isDestReachable(num_reachable, reachables, dest_id)) {
                 // add this sensor to the list of visited IDs
-                strcat(hop_list_str, " ");
-                strcat(hop_list_str, id); 
+                // strcat(hop_list_str, " ");
+                // strcat(hop_list_str, id); 
+                addToHopList(hop_list_str, id);
                 list_size++;
 
                 sendData(sockfd, id, dest_id, dest_id, list_size, id);

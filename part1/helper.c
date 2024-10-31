@@ -11,6 +11,79 @@
 #include "../../../lib/unp.h"
 // #include "unp.h" 
 
+#define MAX_LEN 512
+// includes both sensors and base stations
+struct Reachable {
+    char* id;
+    float x;
+    float y;
+    float distToDest;
+};
+
+void sendData(int sockfd, char* origin_id, char* next_id, char* dest_id, int list_len, char* hop_list) {
+    char message[MAX_LEN];
+    snprintf(message, sizeof(message), "DATAMESSAGE %s %s %s %d %s", origin_id, next_id, dest_id, list_len, hop_list);
+    send(sockfd, message, strlen(message), 0);
+}
+
+// add ID we've visited to hop list
+void addToHopList(char* hop_list_str, char* id) {
+    strcat(hop_list_str, " ");
+    strcat(hop_list_str, id); 
+}
+
+// free all dynamically allocated space for items in reachable except the array (reachables)
+void cleanReachables(const int num_reachable, struct Reachable** reachables) {
+    for (int i = 0; i < num_reachable; i++) {
+        free(reachables[i]->id);
+        free(reachables[i]);
+    }
+}
+
+int isFloatZero(float value) {
+    const float epsilon = 1e-6; // Tolerance value
+    return fabs(value) < epsilon;
+}
+
+// compare function for sorting IDs (string) in a list alphabetically (used for qsort)
+int compareReachableByDistance(const void* a, const void* b) {
+    struct Reachable* r1 = *(struct Reachable**)a;
+    struct Reachable* r2 = *(struct Reachable**)b;
+
+    float diff = r1->distToDest - r2->distToDest;
+
+    if (isFloatZero(diff)) { 
+        // the distance to dest is the same
+        // resolve ties by choosing the lexicographically smaller ID
+        return strcmp(r1->id, r2->id); 
+    }
+    
+    if (diff < 0) return -1;
+    return 1;
+}
+
+// check if list contains given ID; if yes, we've visited the ID
+bool isVisited(int list_size, char** hop_list, char* id) {
+    for (int i = 0; i < list_size; i++) {
+        if (strcmp(hop_list[i], id) == 0) {
+            return true;
+        }
+    }
+    return false;
+}
+
+// return false if there's no reachable base station/sensor to send next message to
+// otherwise, return true and set next_id;
+bool chooseNextID(int num_reachable, struct Reachable** reachables, int list_size, char** hop_list, char** next_id) {
+    for (int i = 0; i < num_reachable; i++) {
+        if (!isVisited(list_size, hop_list, reachables[i]->id)) {
+            *next_id = reachables[i]->id;
+            return true;
+        }
+    }
+    return false;
+}
+
 // initialize a list of IDs from a string where items are separated by commas
 // e.g. "client1 client2 client3" -> ["client1", "client2", "client3"]
 void createHopListFromStr(char* hop_list_str, char** hop_list) {
