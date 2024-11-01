@@ -100,11 +100,22 @@ void receiveReachable(int sockfd, int* num_reachable, struct Reachable*** reacha
 // print each item in reachable list in the format:
 // ['base_station_a', 'base_station_b', 'base_station_d', 'base_station_e']
 void printReachableList(int size, struct Reachable** reachables) {
-    // printf("printing reachable list of size %d: \n", size);
+    printf("printing reachable list of size %d: \n", size);
     // ['base_station_a', 'base_station_b', 'base_station_d', 'base_station_e']
     printf("[");
     for (int i = 0; i < size; i++) {
         printf("'%s'", reachables[i]->id);
+        if (i != size - 1) printf(", ");
+    }
+    printf("]");
+}
+
+// print each item in string list in the format:
+// ['base_station_a', 'base_station_b', 'base_station_d', 'base_station_e']
+void printReachableIDList(int size, char** reachableIDs) {
+    printf("[");
+    for (int i = 0; i < size; i++) {
+        printf("'%s'", reachableIDs[i]);
         if (i != size - 1) printf(", ");
     }
     printf("]");
@@ -120,17 +131,21 @@ void printReachableResult(char* sensor_id, int size, struct Reachable** reachabl
     char** reachablesIDs = calloc(size, sizeof(char*));
 
     for (int i = 0; i < size; i++) {
-        reachablesIDs[i] = reachables[i]->id;
+        reachablesIDs[i] = calloc(MAX_LEN, sizeof(char));
+        strcpy(reachablesIDs[i], reachables[i]->id);
     }
 
     qsort(reachablesIDs, size, sizeof(char*), compareReachableIDs);
 
     printf("%s: After reading REACHABLE message, I can see: ", sensor_id);
-    // for (int i = 0; i < size; i++) {
-    //     printf(" %s", reachablesIDs[i]);
-    // }
-    printReachableList(size, reachables);
+    printReachableIDList(size, reachablesIDs);
     printf("\n");
+
+    // free memories
+    for (int i = 0; i < size; i++) {
+        free(reachablesIDs[i]);
+    }
+    free(reachablesIDs);
 }
 
 // given message that contains MOVE command from user, update x and y
@@ -265,7 +280,7 @@ int main(int argc, char ** argv ) {
                 float pos_x;
                 float pos_y;
                 getPositionFromServer(sockfd, "client1", &pos_x, &pos_y);
-                printf("received client for pos: %f, %f\n", pos_x, pos_y);
+                // printf("received client for pos: %f, %f\n", pos_x, pos_y);
             } 
             else if (strcmp(request_type, "SENDDATA") == 0) {
                 // before sending data, get the latest list of reachables
@@ -306,7 +321,7 @@ int main(int argc, char ** argv ) {
                 // next, choose the first base station/sensor that we haven't visited
                 char* next_id = calloc(MAX_LEN, sizeof(char));
                 if (!chooseNextID(num_reachable, reachables, list_size, hop_list, next_id)) {
-                    printf("%s: Message from %s to %s could not be delivered.", id, id, dest_id);
+                    printf("%s: Message from %s to %s could not be delivered.\n", id, id, dest_id);
                     continue;
                 }
                 // printf("next id: %s\n", next_id);
@@ -336,7 +351,7 @@ int main(int argc, char ** argv ) {
                 perror("recv error");
             }
             buffer[n] = '\0';  // Null-terminate the received data
-            printf("received: %s\n", buffer);
+            // printf("received: %s\n", buffer);
 
             // parse data message
             char* request_type = strtok(buffer, " ");
@@ -390,7 +405,7 @@ int main(int argc, char ** argv ) {
             // next, choose the first base station/sensor that we haven't visited
             char* next_id = calloc(MAX_LEN, sizeof(char));
             if (!chooseNextID(num_reachable, reachables, list_size, hop_list, next_id)) {
-                printf("%s: Message from %s to %s could not be delivered.", id, orig_id, dest_id);
+                printf("%s: Message from %s to %s could not be delivered.\n", id, orig_id, dest_id);
                 continue;
             }
             // printf("next id: %s\n", next_id);
@@ -409,9 +424,6 @@ int main(int argc, char ** argv ) {
             cleanHopList(list_size, hop_list);
         }
     }
-
-    // send(sockfd, message, strlen(message), 0);
-    // printf("Message sent to server: %s\n", message);
 
     return EXIT_SUCCESS;
 }

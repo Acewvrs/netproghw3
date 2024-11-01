@@ -128,6 +128,46 @@ void closeSocket(int* server_socks, struct Sensor** sensors, int idx) {
     free(sensors[idx]);
 }
 
+// // given a string form of reachable list, sort it 
+// void sortReachableListStr(int list_size, char* list_str) {
+//     // edge case: list is empty
+//     if (list_size == 0) return;
+
+//     printf("list: %s\n", list_str);
+
+//     char** list = calloc(list_size, sizeof(char));
+//     char* list_str_cpy = calloc(MAX_LEN, sizeof(char));
+//     strcpy(list_str_cpy, list_str);
+
+//     // save each reachable ID in string in 2D array of strings
+//     char* reachable = strtok(list_str_cpy, " \0\n");
+//     for (int i = 0; i < list_size; i++) {
+//         list[i] = calloc(MAX_LEN, sizeof(char));
+//         strcpy(list[i], reachable);
+//         reachable = strtok(NULL, " \0\n");
+//     }
+
+//     qsort(list, list_size, sizeof(char*), compareReachableIDs); // sort alphabetically
+
+//     char* new_list_str = calloc(MAX_LEN, sizeof(char));
+//     strcat(new_list_str, list[0]);
+//     for (int i = 1; i < list_size; i++) {
+//         strcat(new_list_str, " ");
+//         strcat(new_list_str, list[i]);
+//     }
+
+//     strcpy(list_str, new_list_str); // save new string list
+//     printf("list: %s\n", list_str);
+
+//     // // free memory
+//     // for (int i = 0; i < list_size; i++) {
+//     //     free(list[i]);
+//     // }
+//     // free(list);
+//     // free(list_str_cpy);
+//     // free(new_list_str);
+// }
+
 void handleUpdatePosition(int sockfd, struct BaseStation** bases, int num_bases, struct Sensor** sensors, char* msg, int idx) {
     // save sensor info
     struct Sensor* sensor = (struct Sensor*)malloc(sizeof(struct Sensor));
@@ -180,6 +220,9 @@ void handleUpdatePosition(int sockfd, struct BaseStation** bases, int num_bases,
             numReachable++;
         }
     }
+
+    // sort the list string alphabetically
+    // sortReachableListStr(numReachable, list);
 
     // form message string in format: REACHABLE [NumReachable] [ReachableList]
     char message[MAX_LEN];
@@ -479,7 +522,7 @@ int main(int argc, char ** argv ) {
                         send(server_socks[i], message, strlen(message), 0);
                     }
                     else if (strcmp(request_type, "DATAMESSAGE") == 0) {
-                        printf("received: %s\n", buffer);
+                        // printf("received: %s\n", buffer);
                         // first, we parse data message
                         strtok(buffer, " "); // read "DATAMESSAGE"
                         char* orig_id = strtok(NULL, " ");
@@ -561,10 +604,11 @@ int main(int argc, char ** argv ) {
                             strcpy(prev_id, next_id);
                             if (!chooseNextID(num_reachables, reachables, list_size, hop_list, next_id)) {
                                 sensor_idx = -1;
+                                printf("%s: Message from %s to %s being forwarded through %s\n", prev_id, orig_id, dest_id, prev_id);
                                 printf("%s: Message from %s to %s could not be delivered.\n", prev_id, orig_id, dest_id);
                                 break;
                             }
-                            printf("next id: %s\n", next_id);
+                            // printf("next id: %s\n", next_id);
                             
                             // print current state of message
                             if (strcmp(orig_id, prev_id) != 0) {
