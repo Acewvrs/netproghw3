@@ -235,8 +235,9 @@ struct BaseStation* getBaseObject(char* base_id, int numBases, struct BaseStatio
 
 // given a base, find all reachable bases (connected) or sensors (in range);
 // return the complete list as returned_list and its size as list_size
-void getReachableIDsForBase(char* base_id, int numBases, struct BaseStation** bases, int numConnected, struct Sensor** sensors, int* list_size, struct Reachable*** returned_list) {
+void getReachableIDsForBase(char* base_id, char* dest_id, int numBases, struct BaseStation** bases, int numConnected, struct Sensor** sensors, int* list_size, struct Reachable*** returned_list) {
     struct BaseStation* base = getBaseObject(base_id, numBases, bases);
+    struct BaseStation* dest = getBaseObject(dest_id, numBases, bases);
 
     // initialize list
     int numLinks = base->numLinks;
@@ -252,7 +253,7 @@ void getReachableIDsForBase(char* base_id, int numBases, struct BaseStation** ba
         float connected_x;
         float connected_y;
         getPosition(base->listOfLinks[i], numBases, bases, sensors, &connected_x, &connected_y);
-        r->distToDest = calulateDistance(base->x, base->y, connected_x, connected_y);
+        r->distToDest = calulateDistance(dest->x, dest->y, connected_x, connected_y);
 
         list[i] = r;
     }
@@ -269,7 +270,7 @@ void getReachableIDsForBase(char* base_id, int numBases, struct BaseStation** ba
             float connected_x;
             float connected_y;
             getPosition(sensors[i]->id, numBases, bases, sensors, &connected_x, &connected_y);
-            r->distToDest = calulateDistance(base->x, base->y, connected_x, connected_y);
+            r->distToDest = calulateDistance(dest->x, dest->y, connected_x, connected_y);
 
             list[idx] = r;
             idx++;
@@ -418,7 +419,7 @@ int main(int argc, char ** argv ) {
 
                 if (n == 0) {
                     // Client closed connection
-                    printf("closing on socket %d \n", i);
+                    // printf("closing %s\n", sensors[i]->id);
                     FD_CLR(server_socks[i], &reads);
                     closeSocket(server_socks, sensors, i);
                     num_connected--;
@@ -457,16 +458,23 @@ int main(int argc, char ** argv ) {
                         // first, we parse data message
                         strtok(buffer, " "); // read "DATAMESSAGE"
                         char* orig_id = strtok(NULL, " ");
-                        char* next_id = strtok(NULL, " ");
+                        char* next_id = calloc(MAX_LEN, sizeof(char));
+                        char* next_id_tmp = strtok(NULL, " ");
+                        strcpy(next_id, next_id_tmp);
                         char* dest_id = strtok(NULL, " ");
                         int list_size = atoi(strtok(NULL, " "));
-                        
+
                         char** hop_list = calloc(list_size, sizeof(char*));
-                        char* hop_list_str = strtok(NULL, " ");
+                        for (int i = 0; i < list_size; i++) {
+                            hop_list[i] = calloc(MAX_LEN, sizeof(char));
+                        }
+                        char* hop_list_str = strtok(NULL, "\0\n"); // end of message
+
                         // char* hop_list_str = calloc(25, sizeof(char));
                         // strcpy(hop_list_str, "THIS IS A TEST");
+                        // printf("size: %d, list: %s\n", list_size, hop_list_str);
 
-                        createHopListFromStr(hop_list_str, hop_list);
+                        createHopListFromStr(list_size, hop_list_str, hop_list);
 
                         // printf("printing hop_list: \n");
                         // for (int i = 0; i < list_size; i++) {
@@ -478,14 +486,15 @@ int main(int argc, char ** argv ) {
                         // if sensor, send message directly to it
                         int sensor_idx = isSensor(next_id, sensors);
                         // int sensor_idx = isSensor("client1", sensors);
-                        printf("sensor idx: %d\n", sensor_idx);      
+                        // printf("sensor idx: %d\n", sensor_idx);      
 
                         // run this loop while next ID is a base station OR until dest reached
                         // in the beginning of the loop, we're "on" the base station of next_id
+                        char* prev_id = calloc(MAX_LEN, sizeof(char));
                         int num_reachables;
-                        struct Reachable** reachables;
                         while (sensor_idx < 0) {
                             // message reached dest
+                            // printf("next id: %s, dest id: %s\n", next_id, dest_id);
                             if (strcmp(next_id, dest_id) == 0) {
                                 printf("%s: Message from %s to %s successfully received.\n", dest_id, orig_id, dest_id);
                                 break;
@@ -493,57 +502,92 @@ int main(int argc, char ** argv ) {
 
                             // while in this loop, we assume the message is sent from the base station, next_id
                             
-
                             // first, get all reachable base stations/sensors
-                            getReachableIDsForBase(next_id, num_bases, bases, num_connected, sensors, &num_reachables, &reachables);
+                            struct Reachable** reachables;
+                            getReachableIDsForBase(next_id, dest_id, num_bases, bases, num_connected, sensors, &num_reachables, &reachables);
                             
                             // sort the list based on distance, then lexicographically
                             qsort(reachables, num_reachables, sizeof(struct Reachable*), compareReachableByDistance);
                             
+                            // printf("current id %s has %d reachables\n", next_id, num_reachables);
+                            // for (int i = 0; i < num_reachables; i++) {
+                            //     printf(" idx %d: %s, dist: %f\n", i, reachables[i]->id, reachables[i]->distToDest);
+                            // }
+                            // printf("list size: %d list: %s\n", list_size, hop_list_str);
+  
+                            // for (int i = 0; i < num_reachables; i++) {
+                            //     printf("i: %d, id: %s\n", i, reachables[i]->id);
+                            //     for (int j = 0; j < list_size; j++) {
+                            //         printf("j: %d, id: %s\n", j, hop_list[j]);
+                            //         if (strcmp(hop_list[j], reachables[i]->id) == 0) {
+                            //             break;
+                            //         }
+                            //     }
+
+                            //     if (!isVisited(list_size, hop_list, reachables[i]->id)) {
+                            //         // *next_id = reachables[i]->id;
+                            //         strcpy(next_id, reachables[i]->id);
+                            //         break;
+                            //     }
+                            //     // printf("done!\n");
+                            // }
+
                             // next, choose the first base station/sensor that we haven't visited
-                            char* prev_id = next_id;
-                            if (!chooseNextID(num_reachables, reachables, list_size, hop_list, &next_id)) {
+                            strcpy(prev_id, next_id);
+                            if (!chooseNextID(num_reachables, reachables, list_size, hop_list, next_id)) {
                                 sensor_idx = -1;
                                 printf("%s: Message from %s to %s could not be delivered.\n", prev_id, orig_id, dest_id);
                                 break;
                             }
+                            // printf("next id: %s\n", next_id);
                             
                             // print current state of message
                             if (strcmp(orig_id, prev_id) != 0) {
                                 printf("%s: Message from %s to %s being forwarded through %s\n", prev_id, orig_id, dest_id, prev_id);
                             }
                             else if (strcmp(next_id, dest_id) == 0) {
-                                printf("%s: Sent a new message directly to %s\n", prev_id, dest_id);
+                                printf("%s: Sent a new message directly to %s.\n", prev_id, dest_id);
                             }
                             else {
-                                printf("%s: Message from %s to %s bound for %s\n", prev_id, orig_id, dest_id, prev_id);
+                                printf("%s: Message from %s to %s bound for %s.\n", prev_id, orig_id, dest_id, prev_id);
                             }
 
                             // determine if the next id is a sensor
                             sensor_idx = isSensor(next_id, sensors);
-                            printf("sensor idx: %d\n", sensor_idx);    
+                            // printf("sensor idx: %d\n", sensor_idx);    
 
-                            // update hop list
+                            // update hop list (string)
                             addToHopList(hop_list_str, prev_id);
                             list_size++;
-                            printf("hop list: %s\n", hop_list_str);
 
-                            // clean memory of hop list we allocated
+                            // update hop list (array)
+                            char** new_list = realloc(hop_list, sizeof(char*)*list_size);
+                            hop_list = new_list;
+                            hop_list[list_size-1] = calloc(MAX_LEN, sizeof(char));
+                            strcpy(hop_list[list_size-1], prev_id);
+                            // printf("hop list: %s\n", hop_list_str);
+                            // createHopListFromStr(list_size, hop_list_str, hop_list);
+                            // printf("hop list: %s\n", hop_list_str);
+
                             cleanReachables(num_reachables, reachables);
+                            free(reachables);
                         }
-
                         if (sensor_idx >= 0) {
-                            printf("sending: %s\n", buffer);
                             // send(server_socks[sensor_idx], buffer, strlen(buffer), 0);
                             sendData(server_socks[sensor_idx], orig_id, next_id, dest_id, list_size, hop_list_str);
                         }
-        
+
+                        free(next_id);
+                        free(prev_id);
+
+                        // TODO FREE HOP LIST ARRAY
+                        // cleanHopList(list_size, hop_list);
                     }
                     else if (strcmp(request_type, "TEST") == 0) {
                         // FOR DEBUGGING PURPOSES ONLY
                         int num_reachables;
                         struct Reachable** reachables;
-                        getReachableIDsForBase("base_station_a", num_bases, bases, num_connected, sensors, &num_reachables, &reachables);
+                        getReachableIDsForBase("base_station_a", "base_station_h", num_bases, bases, num_connected, sensors, &num_reachables, &reachables);
 
                         printf("reachable list: \n");
                         for (int i = 0; i < num_reachables; i++) {
@@ -576,12 +620,6 @@ int main(int argc, char ** argv ) {
 
     free(server_socks);
 
-    for (int i = 0; i < MAX_CONNECTIONS; i++) {
-        if (sensors[i] != NULL) {
-            free(sensors[i]->id);
-            free(sensors[i]);
-        }
-    }
     free(sensors);
 
     free(buffer);

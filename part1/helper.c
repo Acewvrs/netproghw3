@@ -20,6 +20,13 @@ struct Reachable {
     float distToDest;
 };
 
+void cleanHopList(int list_size, char** hop_list) {
+    for (int i = 0; i < list_size; i++) {
+        free(hop_list[i]);
+    }
+    free(hop_list);
+}
+
 void sendData(int sockfd, char* origin_id, char* next_id, char* dest_id, int list_len, char* hop_list) {
     char message[MAX_LEN];
     snprintf(message, sizeof(message), "DATAMESSAGE %s %s %s %d %s", origin_id, next_id, dest_id, list_len, hop_list);
@@ -33,6 +40,7 @@ void addToHopList(char* hop_list_str, char* id) {
 }
 
 // free all dynamically allocated space for items in reachable except the array (reachables)
+// note this does not free the array itself
 void cleanReachables(const int num_reachable, struct Reachable** reachables) {
     for (int i = 0; i < num_reachable; i++) {
         free(reachables[i]->id);
@@ -74,10 +82,11 @@ bool isVisited(int list_size, char** hop_list, char* id) {
 
 // return false if there's no reachable base station/sensor to send next message to
 // otherwise, return true and set next_id;
-bool chooseNextID(int num_reachable, struct Reachable** reachables, int list_size, char** hop_list, char** next_id) {
+bool chooseNextID(int num_reachable, struct Reachable** reachables, int list_size, char** hop_list, char* next_id) {
     for (int i = 0; i < num_reachable; i++) {
         if (!isVisited(list_size, hop_list, reachables[i]->id)) {
-            *next_id = reachables[i]->id;
+            // *next_id = reachables[i]->id;
+            strcpy(next_id, reachables[i]->id);
             return true;
         }
     }
@@ -86,13 +95,15 @@ bool chooseNextID(int num_reachable, struct Reachable** reachables, int list_siz
 
 // initialize a list of IDs from a string where items are separated by commas
 // e.g. "client1 client2 client3" -> ["client1", "client2", "client3"]
-void createHopListFromStr(char* hop_list_str, char** hop_list) {
-    char* id = strtok(hop_list_str, " ");
-    int idx = 0;
-    while (id) {
-        hop_list[idx] = id;
+// keeps the original string intact
+void createHopListFromStr(int list_size, char* hop_list_str, char** hop_list) {
+    char list_str_copy[MAX_LEN];
+    strcpy(list_str_copy, hop_list_str);
+
+    char* id = strtok(list_str_copy, " \0\n");
+    for (int i = 0; i < list_size; i++) {
+        strcpy(hop_list[i], id);
         id = strtok(NULL, " \0\n");
-        idx++;
     }
 }
 
