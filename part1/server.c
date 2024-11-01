@@ -145,9 +145,9 @@ void handleUpdatePosition(int sockfd, struct BaseStation** bases, int num_bases,
     char fStr[MAX_LEN];
 
     // get sensor info
-    int dist = sensor->range;
-    int x = sensor->x;
-    int y = sensor->y;
+    float dist = sensor->range;
+    float x = sensor->x;
+    float y = sensor->y;
 
     // populate the list of reachable
     int numReachable = 0;
@@ -170,12 +170,12 @@ void handleUpdatePosition(int sockfd, struct BaseStation** bases, int num_bases,
     for (int i = 0; i < MAX_CONNECTIONS; i++) {
         if (idx != i && sensors[i] != NULL && inRangeSS(sensors[i], sensor)) {
             strcat(list, " ");
-            strcat(list, bases[i]->id);
+            strcat(list, sensors[i]->id);
             strcat(list, " ");
-            sprintf(fStr, "%f", bases[i]->x);
+            sprintf(fStr, "%f", sensors[i]->x);
             strcat(list, fStr);
             strcat(list, " ");
-            sprintf(fStr, "%f", bases[i]->y);
+            sprintf(fStr, "%f", sensors[i]->y);
             strcat(list, fStr);
             numReachable++;
         }
@@ -233,11 +233,36 @@ struct BaseStation* getBaseObject(char* base_id, int numBases, struct BaseStatio
     return NULL;
 }
 
+// given base ID, we return the sensor object associated with it
+// note that it is guaranteed that the ID is valid
+struct Sensor* getSensorObject(char* sensor_id, struct Sensor** sensors) {
+    for (int i = 0; i < MAX_CONNECTIONS; i++) {
+        if (sensors[i] != NULL && strcmp(sensors[i]->id, sensor_id) == 0) {
+            return sensors[i];
+        }
+    }
+    return NULL;
+}
+
 // given a base, find all reachable bases (connected) or sensors (in range);
 // return the complete list as returned_list and its size as list_size
 void getReachableIDsForBase(char* base_id, char* dest_id, int numBases, struct BaseStation** bases, int numConnected, struct Sensor** sensors, int* list_size, struct Reachable*** returned_list) {
     struct BaseStation* base = getBaseObject(base_id, numBases, bases);
-    struct BaseStation* dest = getBaseObject(dest_id, numBases, bases);
+    
+    // first, get the position of dest
+    float dest_x;
+    float dest_y;
+    int result = isSensor(dest_id, sensors);
+    if (result < 0) {
+        struct BaseStation* dest = getBaseObject(dest_id, numBases, bases);
+        dest_x = dest->x;
+        dest_y = dest->y;
+    }
+    else {
+        struct Sensor* dest = getSensorObject(dest_id, sensors);
+        dest_x = dest->x;
+        dest_y = dest->y;
+    }
 
     // initialize list
     int numLinks = base->numLinks;
@@ -253,7 +278,7 @@ void getReachableIDsForBase(char* base_id, char* dest_id, int numBases, struct B
         float connected_x;
         float connected_y;
         getPosition(base->listOfLinks[i], numBases, bases, sensors, &connected_x, &connected_y);
-        r->distToDest = calulateDistance(dest->x, dest->y, connected_x, connected_y);
+        r->distToDest = calulateDistance(dest_x, dest_y, connected_x, connected_y);
 
         list[i] = r;
     }
@@ -270,7 +295,7 @@ void getReachableIDsForBase(char* base_id, char* dest_id, int numBases, struct B
             float connected_x;
             float connected_y;
             getPosition(sensors[i]->id, numBases, bases, sensors, &connected_x, &connected_y);
-            r->distToDest = calulateDistance(dest->x, dest->y, connected_x, connected_y);
+            r->distToDest = calulateDistance(dest_x, dest_y, connected_x, connected_y);
 
             list[idx] = r;
             idx++;
@@ -505,7 +530,7 @@ int main(int argc, char ** argv ) {
                             // first, get all reachable base stations/sensors
                             struct Reachable** reachables;
                             getReachableIDsForBase(next_id, dest_id, num_bases, bases, num_connected, sensors, &num_reachables, &reachables);
-                            
+
                             // sort the list based on distance, then lexicographically
                             qsort(reachables, num_reachables, sizeof(struct Reachable*), compareReachableByDistance);
                             
@@ -539,7 +564,7 @@ int main(int argc, char ** argv ) {
                                 printf("%s: Message from %s to %s could not be delivered.\n", prev_id, orig_id, dest_id);
                                 break;
                             }
-                            // printf("next id: %s\n", next_id);
+                            printf("next id: %s\n", next_id);
                             
                             // print current state of message
                             if (strcmp(orig_id, prev_id) != 0) {

@@ -288,7 +288,7 @@ int main(int argc, char ** argv ) {
 
                 // first, check if dest is reachable
                 if (isDestReachable(num_reachable, reachables, dest_id)) {
-                    printf("%s: Sent a new message directly to %s\n", id, dest_id);
+                    printf("%s: Sent a new message directly to %s.\n", id, dest_id);
                     sendData(sockfd, id, dest_id, dest_id, list_size, id);
                     continue;
                 }
@@ -351,13 +351,12 @@ int main(int argc, char ** argv ) {
             }
             char* hop_list_str = strtok(NULL, "\0\n"); // end of message
             
-            // printf("size: %d, list: %s\n", list_size, hop_list_str);
             createHopListFromStr(list_size, hop_list_str, hop_list);
             // printf("size: %d, list: %s\n", list_size, hop_list_str);
 
             // message reached dest
             if (strcmp(id, dest_id) == 0) {
-                printf("%s: Message from %s to %s successfully received.", id, orig_id, dest_id);
+                printf("%s: Message from %s to %s successfully received.\n", id, orig_id, dest_id);
                 continue;
             }
 
