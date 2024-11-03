@@ -51,8 +51,10 @@ void saveBase(struct BaseStation* base, char* base_info) {
             word[word_size] = '\0';
 
             if (word_idx == 0) { // id
-                base->id = word;
-                word = calloc(MAX_LEN, sizeof(char));
+                char* word_cpy = calloc(MAX_LEN, sizeof(char));
+                strcpy(word_cpy, word);
+                base->id = word_cpy;
+                // word = calloc(MAX_LEN, sizeof(char));
             }
             else if (word_idx == 1) { // xPos
                 base->x = atof(word);
@@ -65,8 +67,10 @@ void saveBase(struct BaseStation* base, char* base_info) {
                 base->listOfLinks = calloc(atoi(word), sizeof(char*));
             }
             else { // add other bases to list of links
-                base->listOfLinks[word_idx - 4] = word;
-                word = calloc(MAX_LEN, sizeof(char));
+                char* word_cpy = calloc(MAX_LEN, sizeof(char));
+                strcpy(word_cpy, word);
+                base->listOfLinks[word_idx - 4] = word_cpy;
+                // word = calloc(MAX_LEN, sizeof(char));
             }
 
             // if (base_info[i] == ' ') word = calloc(MAX_LEN, sizeof(char)); // not the end of line; there's more words to process
@@ -79,6 +83,7 @@ void saveBase(struct BaseStation* base, char* base_info) {
             word_size++;
         }
     }
+    free(word);
 }
 
 void printSensor(struct Sensor* sensor) {
@@ -123,7 +128,7 @@ void saveSensor(struct Sensor* sensor, char* sensor_info) {
 // close an established socket and free space allocated for sensor
 void closeSocket(int* server_socks, struct Sensor** sensors, int idx) {
     close(server_socks[idx]);
-    server_socks[idx] = 0;
+    server_socks[idx] = -1;
     free(sensors[idx]->id);
     free(sensors[idx]);
 }
@@ -650,7 +655,7 @@ int main(int argc, char ** argv ) {
                         free(prev_id);
 
                         // TODO FREE HOP LIST ARRAY
-                        // cleanHopList(list_size, hop_list);
+                        cleanHopList(list_size, hop_list);
                     }
                     else if (strcmp(request_type, "TEST") == 0) {
                         // FOR DEBUGGING PURPOSES ONLY
@@ -680,6 +685,9 @@ int main(int argc, char ** argv ) {
     // free dynamically allocated space
     for (int i = 0; i < num_bases; i++) {
         free(bases[i]->id);
+        for (int j = 0; j < bases[i]->numLinks; j++) {
+            free(bases[i]->listOfLinks[j]);
+        }
         free(bases[i]->listOfLinks);
         free(bases[i]);
     }
@@ -689,6 +697,13 @@ int main(int argc, char ** argv ) {
 
     free(server_socks);
 
+    // free any connected sockets' sensor data
+    for (int i = 0; i < MAX_CONNECTIONS; i++) {
+        if (sensors[i] != NULL) {
+            free(sensors[i]->id);
+            free(sensors[i]);
+        }
+    }
     free(sensors);
 
     free(buffer);

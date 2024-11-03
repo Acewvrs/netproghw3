@@ -266,7 +266,7 @@ int main(int argc, char ** argv ) {
             getRequestType(buffer, request_type);
             if (strcmp(request_type, "QUIT") == 0) break;
             else if (strcmp(request_type, "MOVE") == 0) {   // MOVE [NewXPosition] [NewYPosition]
-                cleanReachables(num_reachable, reachables);  // remove every item in reachables
+                cleanReachables(num_reachable, &reachables);  // remove every item in reachables
                 updatePosition(buffer, &x, &y);             
                 // printf("updated pos: (%f, %f)\n", x, y);
                 sendUpdatePosition(sockfd, id, range, x, y);
@@ -284,16 +284,17 @@ int main(int argc, char ** argv ) {
             } 
             else if (strcmp(request_type, "SENDDATA") == 0) {
                 // before sending data, get the latest list of reachables
+                cleanReachables(num_reachable, &reachables);  // remove every item in reachables
                 sendUpdatePosition(sockfd, id, range, x, y);
                 receiveReachable(sockfd, &num_reachable, &reachables);
                 printReachableResult(id, num_reachable, reachables);
 
                 // and create a list that contains the stations/sensors we've visited
                 // currently, there's only one in the list (self)
-                char** hop_list = calloc(1, sizeof(char*));
-                hop_list[0] = calloc(MAX_LEN, sizeof(char));
-                strcpy(hop_list[0], id);
                 int list_size = 1;
+                char** hop_list = calloc(list_size, sizeof(char*));
+                hop_list[0] = calloc(MAX_LEN, sizeof(char));
+                strcpy(hop_list[0], id);    
 
                 // then, get the ID of destination sensor/base station
                 char* dest_id;
@@ -305,6 +306,7 @@ int main(int argc, char ** argv ) {
                 if (isDestReachable(num_reachable, reachables, dest_id)) {
                     printf("%s: Sent a new message directly to %s.\n", id, dest_id);
                     sendData(sockfd, id, dest_id, dest_id, list_size, id);
+                    cleanHopList(list_size, hop_list);
                     continue;
                 }
 
@@ -322,6 +324,8 @@ int main(int argc, char ** argv ) {
                 char* next_id = calloc(MAX_LEN, sizeof(char));
                 if (!chooseNextID(num_reachable, reachables, list_size, hop_list, next_id)) {
                     printf("%s: Message from %s to %s could not be delivered.\n", id, id, dest_id);
+                    cleanHopList(list_size, hop_list);
+                    free(next_id);
                     continue;
                 }
                 // printf("next id: %s\n", next_id);
@@ -332,6 +336,7 @@ int main(int argc, char ** argv ) {
 
                 // clean memory of hop list we allocated
                 cleanHopList(list_size, hop_list);
+                free(next_id);
             }
             else if (strcmp(request_type, "TEST") == 0) {
                 // FOR DEBUGGING PURPOSES ONLY
@@ -372,10 +377,12 @@ int main(int argc, char ** argv ) {
             // message reached dest
             if (strcmp(id, dest_id) == 0) {
                 printf("%s: Message from %s to %s successfully received.\n", id, orig_id, dest_id);
+                cleanHopList(list_size, hop_list);
                 continue;
             }
 
             // before sending data, get the latest list of reachables
+            cleanReachables(num_reachable, &reachables);  // remove every item in reachables
             sendUpdatePosition(sockfd, id, range, x, y);
             receiveReachable(sockfd, &num_reachable, &reachables);
 
@@ -388,6 +395,7 @@ int main(int argc, char ** argv ) {
                 printf("%s: Message from %s to %s being forwarded through %s\n", id, orig_id, dest_id, id);
                 printReachableResult(id, num_reachable, reachables);
                 sendData(sockfd, orig_id, dest_id, dest_id, list_size, hop_list_str);
+                cleanHopList(list_size, hop_list);
                 continue;
             }
             printReachableResult(id, num_reachable, reachables);
@@ -406,6 +414,8 @@ int main(int argc, char ** argv ) {
             char* next_id = calloc(MAX_LEN, sizeof(char));
             if (!chooseNextID(num_reachable, reachables, list_size, hop_list, next_id)) {
                 printf("%s: Message from %s to %s could not be delivered.\n", id, orig_id, dest_id);
+                cleanHopList(list_size, hop_list);
+                free(next_id);
                 continue;
             }
             // printf("next id: %s\n", next_id);
@@ -422,8 +432,11 @@ int main(int argc, char ** argv ) {
 
             // clean memory of hop list we allocated
             cleanHopList(list_size, hop_list);
+            free(next_id);
         }
     }
+
+    cleanReachables(num_reachable, &reachables);  // remove every item in reachables
 
     return EXIT_SUCCESS;
 }

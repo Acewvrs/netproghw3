@@ -8,8 +8,8 @@
 #include <ctype.h>
 #include <math.h>
 #include <arpa/inet.h>
-// #include "../../../lib/unp.h"
-#include "unp.h" 
+#include "../../../lib/unp.h"
+// #include "../unp.h" 
 
 #define MAX_LEN 512
 // includes both sensors and base stations
@@ -40,12 +40,13 @@ void addToHopList(char* hop_list_str, char* id) {
 }
 
 // free all dynamically allocated space for items in reachable except the array (reachables)
-// note this does not free the array itself
-void cleanReachables(const int num_reachable, struct Reachable** reachables) {
+// note this does free the array itself as well
+void cleanReachables(const int num_reachable, struct Reachable*** reachables) {
     for (int i = 0; i < num_reachable; i++) {
-        free(reachables[i]->id);
-        free(reachables[i]);
+        free((*reachables)[i]->id);
+        free((*reachables)[i]);
     }
+    free(*reachables);
 }
 
 int isFloatZero(float value) {

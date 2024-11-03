@@ -5,6 +5,6 @@ default: control.out client.out
 # If you add more source files, you will need to make sure each of them has part1/
 # in front of it.
 client.out: part1/client.c
-	gcc part1/client.c libunp.a -o client.out -lm
+	gcc -g part1/client.c libunp.a -o client.out -lm
 control.out: part1/server.c
-	gcc part1/server.c libunp.a -o control.out -lm
+	gcc -g part1/server.c libunp.a -o control.out -lm
